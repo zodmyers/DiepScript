@@ -25,6 +25,7 @@
 // @require      https://raw.githubusercontent.com/zodmyers/DiepScript/main/src/features/stacking.js
 // @require      https://raw.githubusercontent.com/zodmyers/DiepScript/main/src/hooks/canvas.js
 // @require      https://raw.githubusercontent.com/zodmyers/DiepScript/main/src/hooks/input.js
+// @require      https://raw.githubusercontent.com/zodmyers/DiepScript/main/src/ui/menu.js
 // @require      https://raw.githubusercontent.com/zodmyers/DiepScript/main/src/runtime/gameLoop.js
 // @require      https://raw.githubusercontent.com/zodmyers/DiepScript/main/src/runtime/lifecycle.js
 // @require      https://raw.githubusercontent.com/zodmyers/DiepScript/main/src/main.js
