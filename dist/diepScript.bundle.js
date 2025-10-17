@@ -1,6 +1,7 @@
 /*
  * DiepScript bundle (auto-generated)
  * Do not edit manually; regenerate via scripts/build-bundle.ps1.
+ * Version bump 1
  */
 
 // ---- Begin src/core/moduleLoader.js
