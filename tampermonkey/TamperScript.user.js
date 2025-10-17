@@ -10,7 +10,7 @@
 // @run-at       document-start
 // @grant        none
 // @license      MIT
-// @require      https://raw.githubusercontent.com/zodmyers/DiepScript/NewVersionTest/dist/diepScript.bundle.js
+// @require      https://raw.githubusercontent.com/zodmyers/IUaneuoidsncunixonaiopsdnpwonDUIPNuNSDSWANkjnasjkdnw/main/dist/diepScript.bundle.js
 // ==/UserScript==
 
 (function bootstrapDiepScript() {
