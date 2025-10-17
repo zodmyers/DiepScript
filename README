@@ -1,0 +1,2164 @@
+
+// ==UserScript==
+// @license MIT
+// @name         Menu v2 - diep.io (updated)
+// @namespace    bo$$
+// @version      1.3.3
+// @description  Spinner, Aimbot, AutoFarm (predictive blended leading, right-click aimbot, autofarm smoothing, Info tab, convar bullet-speed option, bullet-speed overlay, drone aim-only, right-click autofarm)
+// @author       Dreamy @C:Mi300(Aimbot+Fov) - modified
+// @match        https://diep.io/*
+// @match        https://staging.diep.io/*
+// @match        https://diep-io.rivet.game/*
+// @icon         https://gamesense.pub/favicon.ico
+// @grant        none
+// @run-at       document-start
+// ==/UserScript==
+
+/*
+  Menu v2 userscript
+  - Predictive blended aimbot
+  - Autofarm aim updated
+  - RMB Aimbot option
+  - RMB Autofarm hold option (wont work unless you disable the first autofarm)
+  - FFA/team mode detection fixes
+  - Convar based bullet speed prediction option
+  - Bullet speed overlay for debugging
+  - Drone classes (Overseer/Overlord) aim-only mode (no auto fire) to keep drones functional (bugged, dont use drone tanks)
+*/
+
+const FOV_UPDATE_INTERVAL = 16.6;
+const FOV_LERP = 0.1;
+let setFov = 0.5;
+let foxv = 0.5;
+let keyStates = new Map();
+let prevAimWorld = null; // smoothing between blended aims
+
+const onWheelEvent = event => { setFov += -Math.sign(event.deltaY) * 0.02 * Math.log10(setFov / 0.55 + 1) }
+const onKeyDown = event => { keyStates.set(event.keyCode, 1) }
+const onKeyUp = event => { keyStates.set(event.keyCode, 0) }
+
+function updateFov(){
+  if (typeof window.extern === 'undefined') return;
+  if (!window.extern.doesHaveTank()) return;
+  if (keyStates.get(187)) setFov += 0.01 * Math.log10(setFov / 0.55 + 1);
+  if (keyStates.get(189)) setFov -= 0.01 * Math.log10(setFov / 0.55 + 1);
+
+  foxv += (setFov - foxv) * FOV_LERP;
+  try { window.extern.setScreensizeZoom(1, foxv); } catch(e) {}
+}
+function init(){
+  document.addEventListener("wheel", onWheelEvent);
+  document.addEventListener("keydown", onKeyDown);
+  document.addEventListener("keyup", onKeyUp);
+  setInterval(updateFov, FOV_UPDATE_INTERVAL);
+}
+init();
+
+let a;
+class _a {
+  constructor() {
+    this.p = {};
+    this.v = false;
+    document.addEventListener("DOMContentLoaded", this.tu.bind(this));
+  }
+
+  tu() {
+    if (this.v) return;
+    this.v = true;
+    const originalGetElementById = HTMLDocument.prototype.getElementById;
+    HTMLDocument.prototype.getElementById = function (id) {
+      const elem = originalGetElementById.call(document, id);
+      if (id === "canvas") return wrapCanvas(elem);
+      return elem;
+    };
+
+    const originalCreateElement = HTMLDocument.prototype.createElement;
+    HTMLDocument.prototype.createElement = function (tag) {
+      const elem = originalCreateElement.call(document, tag);
+      if (tag === "canvas") return wrapCanvas(elem);
+      return elem;
+    };
+
+    function wrapCanvas(origCanvas) {
+      class HTMLCanvasElementProxy {}
+      let proxyCanvas = new HTMLCanvasElementProxy();
+      proxyCanvas.width = origCanvas.width;
+      proxyCanvas.height = origCanvas.height;
+      proxyCanvas.transferControlToOffscreen = origCanvas.transferControlToOffscreen.bind(origCanvas);
+      proxyCanvas.toDataURL = origCanvas.toDataURL.bind(origCanvas);
+      proxyCanvas.toBlob = origCanvas.toBlob.bind(origCanvas);
+      proxyCanvas.captureStream = origCanvas.captureStream.bind(origCanvas);
+
+      proxyCanvas.getContext = function (...args) {
+        let ctx = origCanvas.getContext(...args);
+        if (args[0] !== "2d") return ctx;
+        return new Proxy(ctx, {
+          get: function (target, prop) {
+            const original = target[prop];
+            if (typeof original !== "function") return original;
+            if (Object.keys(a.p).includes(prop)) {
+              return function (...pArgs) {
+                let skip = false;
+                a.p[prop].forEach((hook) => {
+                  const result = hook(ctx, ...pArgs);
+                  if (!result) {
+                    skip = true;
+                  } else {
+                    [ctx, pArgs] = result;
+                  }
+                });
+                if (skip) return;
+                return original.apply(target, pArgs);
+              };
+            }
+            return original.bind(target);
+          },
+          set: function (target, prop, value) {
+            target[prop] = value;
+            return true;
+          },
+        });
+      };
+      return proxyCanvas;
+    }
+
+    createUnifiedMenu();
+  }
+
+  _(methodName, hookFn) {
+    if (Object.keys(a.p).includes(methodName)) {
+      a.p[methodName].push(hookFn);
+    } else {
+      a.p[methodName] = [hookFn];
+    }
+  }
+}
+a = new _a();
+
+let spinSpeed = 0.80;
+let isSpinning = false;
+let spinAngle = 0;
+let isShooting = false;
+let isFiring = false;
+let isAimbotActive = false;
+let playerTank = "Tank";
+let playerLevel = 1;
+let playerX = 0;
+let playerY = 0;
+let arrowPos = [0, 0];
+let minimapPos = [0, 0];
+let minimapSize = [0, 0];
+let fov = 0.5;
+let text = [];
+let tankShapes = [];
+let lastPlayers = [];
+let players = [];
+let lastArc = [Infinity, Infinity];
+let mousePressed = false;    // left-mouse pressed (shoot)
+let rightMouseDown = false;  // TRACK RIGHT MOUSE (required to enable aimbot)
+let mouseLocked = false;
+let mouseX = 0;
+let mouseY = 0;
+let isAutoFarm = false;
+let neutralSquares = [];
+let neutralPentagons = [];
+let neutralTriangles = [];
+let farmPriority = "pentagon";
+let isDebug = false;
+let hasJoined = false;
+const averageEnemyDodgeTime = 1750;
+const destroyerAccuracy = true;
+const playerVelocityPredictionSampleSize = 50;
+const arenaSize = 26000;
+const gameStyle = {
+  ren_grid_base_alpha: 0.05,
+  square: "#ffe869",
+  triangle: "#fc7677",
+  pentagon: "#768dfc",
+  teamBlue: "#00b2e1",
+  teamRed: "#f14e54",
+  teamPurple: "#bf7ff5",
+  teamGreen: "#00e16e",
+};
+let teamColor = "";
+const bulletSpeedOffsets = {
+  Skimmer: 0.5,
+  Factory: 0.56,
+  Annihilator: 0.7,
+  Streamliner: 1.1,
+  "Auto Gunner": 1.1,
+  Gunner: 1.1,
+  Predator: 1.4,
+  Mothership: 0.48,
+  Manager: 0.8,
+  Hybrid: 0.7,
+  Ranger: 1.5,
+  Stalker: 1.5,
+  Assassin: 1.5,
+  Sniper: 1.5,
+  Hunter: 1.4,
+  Necromancer: 0.72,
+  "Arena Closer": 2,
+  Overlord: 0.8,
+  Overseer: 0.8,
+  Destroyer: 0.7,
+};
+
+const predatorStackTime = [
+  [50, 500, 1400, 2800],
+  [50, 500, 1300, 2700],
+  [50, 400, 1200, 2450],
+  [50, 300, 1100, 2200],
+  [50, 300, 1000, 2100],
+  [50, 300, 900, 1800],
+  [50, 300, 800, 1700],
+  [50, 300, 750, 1500],
+];
+const hunterStackTime = [
+  [50, 1200],
+  [50, 1100],
+  [50, 1000],
+  [50, 950],
+  [50, 800],
+  [50, 725],
+  [50, 700],
+  [50, 625],
+];
+const buildStatLevels = [
+  2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+  23, 24, 25, 26, 27, 28, 30, 33, 36, 39, 42, 45,
+];
+const statNumbers = {
+  1: "healthRegen",
+  2: "maxHealth",
+  3: "bodyDamage",
+  4: "bulletSpeed",
+  5: "bulletPenetration",
+  6: "bulletDamage",
+  7: "reload",
+  8: "movementSpeed",
+};
+
+// Autofarm smoothing state & tuning (only used for autofarm aiming)
+let autoAimX = null;
+let autoAimY = null;
+let AUTO_AIM_LERP = 0.45; // higher = faster/snappier; lower = smoother/slower
+const AUTO_AIM_FIRE_THRESHOLD = 12;
+
+// shooter (player) prediction history for velocity estimation
+let playerPositionTable = Array.from(new Array(playerVelocityPredictionSampleSize), () => null);
+// computed shooter velocity [vx, vy] in same units as target.velocity
+let shooterVelocity = [0, 0];
+// tune: maximum intercept time (ms) we accept; larger values are more speculative
+const MAX_INTERCEPT_TIME_MS = 2000;
+
+// New: toggles & runtime state for bullet-speed & overlays + drone aim-only + right-click autofarm
+let useConvarBulletSpeed = false; // controlled by menu checkbox (Aim tab)
+let showBulletSpeeds = false;     // controlled by menu checkbox (Visuals tab)
+let bulletPositions = [];         // collected by canvas arc hook (small arcs assumed bullets)
+let currentComputedBulletSpeed = null; // updated each frame (value used for overlays for debugging)
+
+const DRONE_CLASSES = ["Overseer", "Overlord"]; // classes that use drones/minions
+let useDroneAimOnlyForMinions = true; // AIM setting (default ON) - aim only, do not click for drones
+
+let autofarmOnRightHold = false; // NEW: hold right-click to enable autofarm (prioritize enemies when visible)
+
+// Helper: read current bullet-speed stat + compute bullet speed used by intercept math
+function getCurrentBulletSpeed() {
+  if (typeof window === "undefined" || typeof window.extern === "undefined") {
+    return { ok: false, reason: "window.extern unavailable" };
+  }
+
+  let rawStats;
+  try {
+    rawStats = window.extern.get_convar && window.extern.get_convar("game_stats_build");
+  } catch (e) {
+    rawStats = null;
+  }
+
+  if (!Array.isArray(rawStats)) {
+    return { ok: false, reason: "game_stats_build not available or not an array", rawStats };
+  }
+
+  let bulletStatCount = 0;
+  for (let i = 0; i < rawStats.length; ++i) {
+    const statId = rawStats[i];
+    if (statNumbers && statNumbers[statId] === "bulletSpeed") bulletStatCount++;
+  }
+
+  const tankOffset = (typeof getTankBulletSpeedOffset === "function")
+    ? getTankBulletSpeedOffset(playerTank)
+    : (bulletSpeedOffsets ? (bulletSpeedOffsets[playerTank] || 1) : 1);
+
+  const rawValue = 20 + bulletStatCount * 3 * tankOffset;
+  const computedBulletSpeed = rawValue * 0.03;
+
+  return {
+    ok: true,
+    rawStats,
+    bulletStatCount,
+    playerTank,
+    tankOffset,
+    rawValue,
+    computedBulletSpeed,
+    units: "same as calculateMainBulletSpeed() result (script's internal units)",
+  };
+}
+
+function getUpgrades() {
+  let upgrades = 0;
+  for (let i = 0; i < buildStatLevels.length; ++i) {
+    upgrades++;
+    if (playerLevel < buildStatLevels[i]) break;
+  }
+  return upgrades;
+}
+function canUpgrade() {
+  const rawStats = window.extern.get_convar("game_stats_build");
+  return getUpgrades() - 1 > rawStats.length;
+}
+function truncateStats() {
+  const rawStats = window.extern.get_convar("game_stats_build");
+  return rawStats.slice(0, getUpgrades());
+}
+function getStats() {
+  const rawStats = window.extern.get_convar("game_stats_build");
+  let stats = {
+    healthRegen: 0,
+    maxHealth: 0,
+    bodyDamage: 0,
+    bulletSpeed: 0,
+    bulletPenetration: 0,
+    bulletDamage: 0,
+    reload: 0,
+    movementSpeed: 0,
+  };
+  for (let i = 0; i < rawStats.length; ++i) {
+    ++stats[statNumbers[rawStats[i]]];
+  }
+  return stats;
+}
+
+let forcingU = false;
+function forceU() {
+  if (canUpgrade()) {
+    forcingU = true;
+    window.extern.onKeyDown(21, 1);
+  } else if (forcingU) {
+    forcingU = false;
+    window.extern.onKeyUp(21, 1);
+  }
+}
+function getTankBulletSpeedOffset(tank) {
+  return bulletSpeedOffsets[tank] || 1;
+}
+function calculateMainBulletSpeed() {
+  const speedstat = getStats().bulletSpeed;
+  return (
+    (20 + speedstat * 3 * getTankBulletSpeedOffset(playerTank)) * 0.03
+  );
+}
+function getDistance(x1, y1, x2, y2) {
+  const distX = x1 - x2;
+  const distY = y1 - y2;
+  return Math.hypot(distX, distY);
+}
+
+function calculateTime(player) {
+  const distance = getDistance(playerX, playerY, player.wx, player.wy);
+  const bulletSpeed = calculateMainBulletSpeed();
+  const playerVel = getDistVel(player);
+  const relativeBulletToTargetVel = bulletSpeed - playerVel;
+  return distance / relativeBulletToTargetVel;
+}
+
+function predictPlayer(player, time) {
+  const [velX, velY] =
+    typeof player.velocity === "undefined"
+      ? [0, 0]
+      : [(player.velocity[0] || 0), (player.velocity[1] || 0)];
+  return [player.wx + time * velX, player.wy + time * velY];
+}
+
+function getDistVel(player) {
+  let dd = 0;
+  let dataPoints = 0;
+  for (let i = 1; i < player.positionTable.length; ++i) {
+    if (!player.positionTable[i] || !player.positionTable[i - 1]) continue;
+    const d =
+      getDistance(
+        playerX,
+        playerY,
+        player.positionTable[i].x,
+        player.positionTable[i].y
+      ) -
+      getDistance(
+        playerX,
+        playerY,
+        player.positionTable[i - 1].x,
+        player.positionTable[i - 1].y
+      );
+    const dt =
+      player.positionTable[i].timestamp - player.positionTable[i - 1].timestamp;
+    dd += d / dt;
+    dataPoints++;
+  }
+  return dataPoints > 0 ? dd / dataPoints : 0;
+}
+
+// Drone aim-only helpers (for Overseer/Overlord) ----------------------------------
+function ensureDroneAimOnlyState() {
+  // We do not auto-press fire for drone classes; this function is a placeholder
+  // in case we want to ensure no accidental holds are active.
+  try { window.extern.onKeyUp(36); } catch (e) {}
+  isFiring = false;
+}
+// ---------------------------------------------------------------------------
+
+function getPlayerWeight(player) {
+  const distanceWeight =
+    (1 / getDistance(playerX, playerY, player.wx, player.wy)) * 1000;
+  const scoreWeight = Math.min(23536, Math.max(0, player.score || 0)) / 100000;
+  return distanceWeight + scoreWeight;
+}
+
+function setPlayerPos() {
+  const dx = arrowPos[0] - minimapPos[0];
+  const dy = arrowPos[1] - minimapPos[1];
+  playerX = (dx / minimapSize[0]) * arenaSize;
+  playerY = (dy / minimapSize[1]) * arenaSize;
+}
+
+function getRenderedWorldPosition(x, y) {
+  const mainCanvas = document.getElementById("canvas");
+  const midX = x - mainCanvas.width / 2;
+  const midY = y - mainCanvas.height / 2;
+  const scaledX = midX / (fov / 2.8);
+  const scaledY = midY / (fov / 2.8);
+  return [playerX + scaledX, playerY + scaledY];
+}
+
+function worldToCanvasPosition(x, y) {
+  const mainCanvas = document.getElementById("canvas");
+  const deltaX = x - playerX;
+  const deltaY = y - playerY;
+  return [
+    mainCanvas.width / 2 + deltaX * (fov / 2.8),
+    mainCanvas.height / 2 + deltaY * (fov / 2.8),
+  ];
+}
+
+function worldToMousePosition(x, y) {
+  const deltaX = x - playerX;
+  const deltaY = y - playerY;
+  return [
+    window.innerWidth / 2 + deltaX * (fov / 2.8),
+    window.innerHeight / 2 + deltaY * (fov / 2.8),
+  ];
+}
+
+function parseDiepScore(s) {
+  let scoreMultiplier = 1;
+  if (s[s.length - 1] === "k") scoreMultiplier = 1000;
+  else if (s[s.length - 1] === "m") scoreMultiplier = 1000000;
+  else if (!s.includes(".")) {
+    if (isNaN(s)) return null;
+    const toInt = parseInt(s, 10);
+    return isNaN(toInt) ? null : toInt;
+  } else return null;
+  const toFloat = parseFloat(s.slice(0, -1));
+  if (isNaN(toFloat)) return null;
+  return toFloat * scoreMultiplier;
+}
+
+function getClosestText(arr, x, y) {
+  return arr.reduce(function (acc, cur) {
+    if (!acc) return cur;
+    const distAcc = getDistance(x, y, acc.mx, acc.my);
+    const distCur = getDistance(x, y, cur.mx, cur.my);
+    return distAcc > distCur ? cur : acc;
+  }, null);
+}
+
+function getPlayers() {
+  lastPlayers = players;
+  players = [];
+  for (let aIndex = 0; aIndex < tankShapes.length; ++aIndex) {
+    if (tankShapes[aIndex].radius / fov < 19) continue;
+    const scoreTextPos = [
+      tankShapes[aIndex].x,
+      tankShapes[aIndex].y - tankShapes[aIndex].radius * 1.3,
+    ];
+    const nameTextPos = [
+      tankShapes[aIndex].x,
+      tankShapes[aIndex].y - tankShapes[aIndex].radius * 2,
+    ];
+    const closestScoreText = getClosestText(text, ...scoreTextPos);
+    const closestNameText = getClosestText(text, ...nameTextPos);
+    const distToScore = closestScoreText
+      ? getDistance(
+          ...scoreTextPos,
+          closestScoreText.mx,
+          closestScoreText.my
+        )
+      : Infinity;
+    const distToName = closestNameText
+      ? getDistance(...nameTextPos, closestNameText.mx, closestNameText.my)
+      : Infinity;
+
+    let score = "";
+    let name = "";
+    if (distToScore < 25) {
+      score = parseDiepScore(closestScoreText ? closestScoreText.text : "-1");
+    }
+    if (distToName < 25) {
+      name = closestNameText ? closestNameText.text : "";
+    }
+
+    // Include players that have a name even if no score detected; also include score-only as before
+    if (score !== "" || (name && name.trim() !== "")) {
+      const [wx, wy] = getRenderedWorldPosition(
+        tankShapes[aIndex].x,
+        tankShapes[aIndex].y
+      );
+      players.push({
+        wx,
+        wy,
+        x: tankShapes[aIndex].x,
+        y: tankShapes[aIndex].y,
+        radius: tankShapes[aIndex].radius,
+        name,
+        score,
+        velocity: undefined,
+        teammate: (isTeamMode() && tankShapes[aIndex].fillStyle === gameStyle[teamColor]),
+      });
+    }
+  }
+}
+
+function matchPlayers() {
+  for (let i = 0; i < players.length; ++i) {
+    const [x, y] = [players[i].wx, players[i].wy];
+    const lastPlayer = lastPlayers.reduce((acc, cur) => {
+      if (!acc) return cur;
+      const distAcc = getDistance(x, y, acc.wx, acc.wy);
+      const distCur = getDistance(x, y, cur.wx, cur.wy);
+      return distAcc > distCur ? cur : acc;
+    }, null);
+    if (
+      lastPlayer &&
+      getDistance(
+        players[i].wx,
+        players[i].wy,
+        lastPlayer.wx,
+        lastPlayer.wy
+      ) < 25
+    ) {
+      players[i].teammate = lastPlayer.teammate || players[i].teammate;
+      players[i].positionTable = lastPlayer.positionTable.concat();
+      players[i].positionTable.push({
+        x: players[i].wx,
+        y: players[i].wy,
+        timestamp: performance.now(),
+      });
+      players[i].positionTable.shift();
+      players[i].velocity = getVelocity(players[i]);
+    } else {
+      players[i].positionTable = Array.from(
+        new Array(playerVelocityPredictionSampleSize),
+        () => null
+      );
+    }
+
+    // Safety: if not team mode, ensure teammate=false to avoid stale flags after FFA
+    if (!isTeamMode()) {
+      players[i].teammate = false;
+    }
+  }
+}
+
+function getVelocity(player) {
+  let tx = 0,
+    ty = 0;
+  let dataPoints = 0;
+  for (let i = 1; i < player.positionTable.length; ++i) {
+    if (!player.positionTable[i] || !player.positionTable[i - 1]) continue;
+    const dx = player.positionTable[i].x - player.positionTable[i - 1].x;
+    const dy = player.positionTable[i].y - player.positionTable[i - 1].y;
+    const dt =
+      player.positionTable[i].timestamp - player.positionTable[i - 1].timestamp;
+    // ignore tiny dt to avoid spikes
+    if (dt < 6) continue;
+    tx += dx / dt;
+    ty += dy / dt;
+    dataPoints++;
+  }
+  return dataPoints > 0 ? [tx / dataPoints, ty / dataPoints] : [0, 0];
+}
+
+function renderOverlay(player, tx, ty, px, py) {
+  if (!isDebug) return;
+  const ctx = document.getElementById("canvas").getContext("2d");
+  const [stx, sty] = worldToCanvasPosition(tx, ty);
+  const [spx, spy] = worldToCanvasPosition(px, py);
+  ctx.beginPath();
+  ctx.arc(stx, sty, 25, Math.PI * 2, 0, 1);
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = "#ff5294";
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(spx, spy, 25, Math.PI * 2, 0, 1);
+  ctx.fillStyle = "#52e8ff";
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  ctx.moveTo(stx, sty);
+  ctx.lineTo(spx, spy);
+  ctx.strokeStyle = "#000000";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+// Quadratic solver and intercept helpers
+function quad(a, b, c) {
+  var sol = null;
+  if (Math.abs(a) < 1e-6) {
+    if (Math.abs(b) < 1e-6) {
+      sol = Math.abs(c) < 1e-6 ? [0, 0] : null;
+    } else {
+      sol = [-c / b, -c / b];
+    }
+  } else {
+    var disc = b * b - 4 * a * c;
+    if (disc >= 0) {
+      disc = Math.sqrt(disc);
+      var twoA = 2 * a;
+      sol = [(-b - disc) / twoA, (-b + disc) / twoA];
+    }
+  }
+  return sol;
+}
+
+function intercept(src, dst, v) {
+  var tx = dst.x - src.x,
+    ty = dst.y - src.y,
+    tvx = dst.vx || 0,
+    tvy = dst.vy || 0;
+
+  var a = tvx * tvx + tvy * tvy - v * v;
+  var b = 2 * (tvx * tx + tvy * ty);
+  var c = tx * tx + ty * ty;
+
+  var ts = quad(a, b, c);
+
+  var sol = null;
+  if (ts) {
+    var t0 = ts[0], t1 = ts[1];
+    var t = Math.min(t0, t1);
+    if (t < 0) t = Math.max(t0, t1);
+    if (t > 0) {
+      sol = {
+        x: dst.x + tvx * t,
+        y: dst.y + tvy * t,
+        t: t
+      };
+    }
+  }
+  return sol;
+}
+
+// Blend predictive aim: smoothly combine linear and intercept predictions
+function blendPredictiveAim(shooter, target, shooterVel, bulletSpeed, prevAimWorld, opts = {}) {
+  const minDist = opts.minDist ?? 400;
+  const maxDist = opts.maxDist ?? 2000;
+  const minSamples = opts.minSamples ?? 3;
+  const goodSamples = opts.goodSamples ?? 6;
+  const maxGoodT = opts.maxGoodT ?? 1200;
+  const minGoodT = opts.minGoodT ?? 30;
+  const maxAngleDeg = opts.maxAngleDeg ?? 120;
+  const relRatioCap = opts.relRatioCap ?? 0.9;
+  const alphaSmooth = opts.alphaSmooth ?? 0.65;
+
+  const dist = getDistance(shooter.x, shooter.y, target.wx, target.wy);
+
+  const sampleCount = (target.positionTable || []).filter(Boolean).length;
+  const rawTvx = (target.velocity && sampleCount >= minSamples) ? (target.velocity[0] || 0) : 0;
+  const rawTvy = (target.velocity && sampleCount >= minSamples) ? (target.velocity[1] || 0) : 0;
+
+  // linear short-time prediction
+  const fbTime = Math.max(12, Math.min(400, dist / Math.max(1e-6, bulletSpeed)));
+  const linearPred = { x: target.wx + rawTvx * fbTime, y: target.wy + rawTvy * fbTime };
+
+  // attempt intercept with relative velocity
+  const relVx = (rawTvx || 0) - (shooterVel[0] || 0);
+  const relVy = (rawTvy || 0) - (shooterVel[1] || 0);
+  const dst = { x: target.wx, y: target.wy, vx: relVx, vy: relVy };
+  const sol = intercept(shooter, dst, bulletSpeed);
+
+  function smoothstep(a,b,x){ if (a===b) return x<=a?0:1; let t = (x-a)/(b-a); t = Math.max(0, Math.min(1,t)); return t*t*(3-2*t); }
+
+  const s_dist = smoothstep(minDist, maxDist, dist);
+  const s_velSamples = Math.max(0, Math.min(1, (sampleCount - minSamples)/(goodSamples - minSamples)));
+  let s_solT = 0, s_angle = 0, solExists = false;
+  if (sol && isFinite(sol.t) && sol.t > 0) {
+    solExists = true;
+    s_solT = 1 - Math.max(0, (sol.t - minGoodT) / (maxGoodT - minGoodT));
+    const aimVecX = sol.x - shooter.x, aimVecY = sol.y - shooter.y;
+    const targVecX = target.wx - shooter.x, targVecY = target.wy - shooter.y;
+    const denom = Math.max(1e-9, Math.hypot(aimVecX, aimVecY) * Math.hypot(targVecX, targVecY));
+    let cosTheta = (aimVecX * targVecX + aimVecY * targVecY) / denom;
+    cosTheta = Math.max(-1, Math.min(1, cosTheta));
+    const thetaDeg = Math.acos(cosTheta) * 180 / Math.PI;
+    s_angle = 1 - Math.min(1, thetaDeg / maxAngleDeg);
+  }
+
+  const relSpeed = Math.hypot(relVx, relVy);
+  const s_relSpeed = 1 - Math.min(1, relSpeed / (Math.max(1e-6, bulletSpeed) * relRatioCap));
+
+  const w_base = s_dist * s_velSamples;
+  const w_sol = solExists ? (0.6 * s_solT + 0.4 * s_angle) * s_relSpeed : 0;
+  let w = Math.max(0, Math.min(1, 0.6 * w_base + 0.4 * w_sol));
+  if (!solExists) w *= 0.0;
+
+  const aimWorld = {
+    x: linearPred.x * (1 - w) + (solExists ? sol.x : linearPred.x) * w,
+    y: linearPred.y * (1 - w) + (solExists ? sol.y : linearPred.y) * w
+  };
+
+  let finalAim = aimWorld;
+  if (prevAimWorld && typeof prevAimWorld.x === "number") {
+    finalAim = {
+      x: prevAimWorld.x * (1 - alphaSmooth) + aimWorld.x * alphaSmooth,
+      y: prevAimWorld.y * (1 - alphaSmooth) + aimWorld.y * alphaSmooth
+    };
+  }
+
+  return { x: finalAim.x, y: finalAim.y, weight: w, debug: { dist, sampleCount, sol, s_dist, s_velSamples, s_solT, s_angle, s_relSpeed } };
+}
+
+// Autofarm tick (extracted so it can be used both for normal AutoFarm and "hold right-click for autofarm")
+function autofarmTick() {
+  if (!window.extern || !window.extern.doesHaveTank()) return false;
+
+  if (isDebug) {
+    const ctx = document.getElementById("canvas").getContext("2d");
+    ctx.save();
+    const centerX = ctx.canvas.width / 2;
+    const centerY = ctx.canvas.height / 2;
+
+    ctx.strokeStyle = "#9600D6";
+    ctx.lineWidth = 1;
+    neutralPentagons.forEach(([cx, cy]) => {
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(cx, cy);
+      ctx.stroke();
+    });
+
+    ctx.strokeStyle = "#00FF00";
+    ctx.lineWidth = 1;
+    neutralSquares.forEach(([cx, cy]) => {
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(cx, cy);
+      ctx.stroke();
+    });
+    ctx.strokeStyle = "#FF9900";
+    ctx.lineWidth = 1;
+    neutralTriangles.forEach(([cx, cy]) => {
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(cx, cy);
+      ctx.stroke();
+    });
+
+    ctx.restore();
+  }
+
+  let targetWorld = null;
+
+  if (farmPriority === "pentagon" && neutralPentagons.length > 0) {
+    targetWorld = nearestShapeWorld(neutralPentagons);
+  } else if (farmPriority === "square" && neutralSquares.length > 0) {
+    targetWorld = nearestShapeWorld(neutralSquares);
+  } else if (farmPriority === "triangle" && neutralTriangles.length > 0) {
+    targetWorld = nearestShapeWorld(neutralTriangles);
+  }
+  if (!targetWorld) {
+    if (farmPriority !== "pentagon" && neutralPentagons.length > 0) {
+      targetWorld = nearestShapeWorld(neutralPentagons);
+    } else if (farmPriority !== "square" && neutralSquares.length > 0) {
+      targetWorld = nearestShapeWorld(neutralSquares);
+    } else if (farmPriority !== "triangle" && neutralTriangles.length > 0) {
+      targetWorld = nearestShapeWorld(neutralTriangles);
+    }
+  }
+  if (targetWorld) {
+    // Smooth aiming for autofarm only:
+    const [desiredPX, desiredPY] = worldToMousePosition(targetWorld[0], targetWorld[1]);
+
+    if (desiredPX != null && desiredPY != null) {
+      // initialize autoAim to current mouse position if unset (avoids jump)
+      if (autoAimX === null || autoAimY === null) {
+        autoAimX = mouseX || window.innerWidth / 2;
+        autoAimY = mouseY || window.innerHeight / 2;
+      }
+
+      // lerp towards desired position (fast but smooth)
+      autoAimX += (desiredPX - autoAimX) * AUTO_AIM_LERP;
+      autoAimY += (desiredPY - autoAimY) * AUTO_AIM_LERP;
+
+      // send the smoothed movement
+      if (typeof window.extern.onTouchMove === "function") {
+        try { window.extern.onTouchMove(-1, autoAimX, autoAimY, true); } catch(e) {}
+      } else if (typeof window.extern.onMouseMove === "function") {
+        try { window.extern.onMouseMove(autoAimX, autoAimY); } catch(e) {}
+      } else {
+        try { window.extern.onTouchMove(-1, autoAimX, autoAimY, true); } catch(e){}
+      }
+
+      // if we're close enough to the target, fire a quick shot
+      const dx = autoAimX - desiredPX;
+      const dy = autoAimY - desiredPY;
+      const dist = Math.hypot(dx, dy);
+if (dist <= AUTO_AIM_FIRE_THRESHOLD) {
+  isFiring = true;
+  if (!mouseLocked) {
+    try { window.extern.onKeyDown(36); } catch (e) {}
+    setTimeout(() => { try { window.extern.onKeyUp(36); } catch (e) {} }, 50);
+  }
+}
+
+      return true;
+    }
+  }
+  // no autofarm target
+  return false;
+}
+
+// aim() uses blendPredictiveAim to get a smooth blended aimpoint
+// Change signature to accept a force flag (default false)
+function aim(force = false) {
+  const target = players
+    .filter((plr) => !plr.teammate)
+    .reduce((acc, cur) => {
+      if (!acc) return cur;
+      return getPlayerWeight(cur) > getPlayerWeight(acc) ? cur : acc;
+    }, null);
+
+  const enemyMightDodge =
+    destroyerAccuracy &&
+    !!target &&
+    ["Destroyer", "Hybrid", "Annihilator"].includes(playerTank) &&
+    calculateTime(target) >= averageEnemyDodgeTime;
+
+// gating: require configured aimbot trigger (Right-Click OR Space if drone-aim-only), and require aimbot active unless force=true
+if (!target || enemyMightDodge || (!isAimbotActive && !force) || !isAimbotTriggerActive()) {
+  if (mouseLocked) {
+    mouseLocked = false;
+    try { ensureDroneAimOnlyState(); } catch (e) {}
+    try { window.extern.onTouchMove(-1, mouseX, mouseY, true); } catch (e) {}
+    // release game fire key (safe fallback)
+    setTimeout(() => { try { window.extern.onKeyUp(36); } catch (e) {} }, 80);
+  }
+  return;
+}
+if (!mouseLocked) {
+  mouseLocked = true;
+  setTimeout(() => {
+    isFiring = true;
+    const isStackClass = ["Hunter", "Predator"].includes(playerTank);
+    if (useDroneAimOnlyForMinions) {
+      // Menu-enabled drone mode: do NOT auto-fire (aim-only)
+      try { ensureDroneAimOnlyState(); } catch(e){}
+    } else if (isStackClass) {
+      // stacking classes: do a single tap
+      try { window.extern.onKeyDown(36); } catch (e) {}
+      setTimeout(() => { try { window.extern.onKeyUp(36); } catch (e) {} }, 50);
+    } else {
+      // Normal gun classes: hold down fire while locked
+      try { window.extern.onKeyDown(36); } catch (e) {}
+      // onKeyUp will be scheduled in the unlock path
+    }
+  }, 80);
+}
+
+  try {
+// Compute bullet-speed (kept for overlays/prediction path)
+if (useConvarBulletSpeed) {
+  try {
+    const info = getCurrentBulletSpeed();
+    if (info && info.ok && typeof info.computedBulletSpeed === "number") {
+      currentComputedBulletSpeed = info.computedBulletSpeed;
+    } else {
+      currentComputedBulletSpeed = calculateMainBulletSpeed();
+    }
+  } catch (e) {
+    currentComputedBulletSpeed = calculateMainBulletSpeed();
+  }
+} else {
+  currentComputedBulletSpeed = calculateMainBulletSpeed();
+}
+
+// Decide aiming behavior by menu toggle only.
+// When useDroneAimOnlyForMinions is ON, DO NOT use prediction; aim directly at target.
+// Otherwise use the full blended predictive aim.
+let aimWx, aimWy;
+// ensure `blend` exists so later references (blend.debug) are safe
+let blend = { debug: null };
+
+// Tuneable: how many milliseconds of target velocity to compensate (aim behind by this much)
+// NEW: improved drone-mode aim (aim slightly behind + double-send to ensure server processes it)
+const DRONE_AIM_LEAD_MS = 100; // tune this: 30-100ms (increase if drones still hover ahead)
+
+if (useDroneAimOnlyForMinions) {
+  // MENU-ENABLED DRONE MODE: aim at a point slightly behind the target's current position
+  // This reduces forward-leading so drones will move onto the target instead of sitting ahead of it.
+  const tv = target.velocity || [0, 0];
+  const tvx = tv[0] || 0;
+  const tvy = tv[1] || 0;
+
+  // target.velocity is in script units (px per ms). Subtract velocity * leadMs to aim behind.
+  aimWx = target.wx - tvx * DRONE_AIM_LEAD_MS;
+  aimWy = target.wy - tvy * DRONE_AIM_LEAD_MS;
+
+  blend.debug = {
+    mode: "drone-direct-comp",
+    dist: getDistance(playerX, playerY, aimWx, aimWy),
+    tvx, tvy, leadMs: DRONE_AIM_LEAD_MS
+  };
+
+  // Keep prevAimWorld in sync to avoid visual jumps when toggling
+  prevAimWorld = { x: aimWx, y: aimWy };
+} else {
+  // NORMAL MODE: full blended predictive aim (unchanged)
+  const shooter = { x: playerX, y: playerY };
+  const smShooterVel = shooterVelocity || [0, 0];
+  blend = blendPredictiveAim(shooter, target, smShooterVel, currentComputedBulletSpeed, prevAimWorld, {
+    minDist: 350, maxDist: 2000, minSamples: 3, goodSamples: 6, maxGoodT: 1200, minGoodT: 30, maxAngleDeg: 120, relRatioCap: 0.9, alphaSmooth: 0.7
+  });
+  aimWx = blend.x;
+  aimWy = blend.y;
+  prevAimWorld = { x: aimWx, y: aimWy };
+}
+
+    if (isDebug) {
+      if ((blend.debug && blend.debug.dist < 1500) || Math.random() < 0.002) {
+        console.log("[AIM BLEND]", blend.debug);
+      }
+    }
+
+    const [sPX, sPY] = worldToMousePosition(aimWx, aimWy);
+    if (sPX != null && sPY != null) {
+      if (typeof window.extern.onTouchMove === "function") {
+        try { window.extern.onTouchMove(-1, sPX, sPY, true); } catch(e) {}
+      } else if (typeof window.extern.onMouseMove === "function") {
+        try { window.extern.onMouseMove(sPX, sPY); } catch(e) {}
+      } else {
+        try { window.extern.onTouchMove(-1, sPX, sPY, true); } catch(e) {}
+      }
+
+setTimeout(() => {
+  isFiring = true;
+  if (useDroneAimOnlyForMinions) {
+    // Menu-enabled drone mode: ensure no automatic firing
+    try { ensureDroneAimOnlyState(); } catch (e) {}
+  } else {
+    // Non-drone mode: perform a quick tap to guarantee a shot
+    try { window.extern.onKeyDown(36); } catch (e) {}
+    setTimeout(() => { try { window.extern.onKeyUp(36); } catch (e) {} }, 50);
+  }
+}, 10);
+    }
+
+    renderOverlay(target, aimWx, aimWy, target.wx, target.wy);
+  } catch (e) {
+    // fallback to raw aim
+    try {
+      const [sPX, sPY] = worldToMousePosition(target.wx, target.wy);
+      if (sPX != null && sPY != null) {
+        if (typeof window.extern.onTouchMove === "function") {
+          try { window.extern.onTouchMove(-1, sPX, sPY, true); } catch(e) {}
+        } else if (typeof window.extern.onMouseMove === "function") {
+          try { window.extern.onMouseMove(sPX, sPY); } catch(e) {}
+        } else {
+          try { window.extern.onTouchMove(-1, sPX, sPY, true); } catch(e) {}
+        }
+
+        setTimeout(() => {
+          isFiring = true;
+          try { window.extern.onKeyDown(36); } catch(e) {}
+          setTimeout(() => { try { window.extern.onKeyUp(36); } catch(e) {} }, 50);
+        }, 10);
+      }
+      renderOverlay(target, target.wx, target.wy, target.wx, target.wy);
+    } catch (e2) {
+      if (isDebug) console.error("[aim] fallback error", e2);
+    }
+  }
+}
+
+function stack() {
+  if (!(window && window.extern)) return;
+  const reload = getStats().reload;
+  window.extern.onKeyUp(36); // release fire
+
+  if (playerTank === "Hunter") {
+    shoot(hunterStackTime[reload][0]);
+    setTimeout(() => {
+      window.extern.onKeyDown(5);
+      window.extern.onKeyUp(5);
+    }, hunterStackTime[reload][1]);
+  } else if (playerTank === "Predator") {
+    shoot(predatorStackTime[reload][0]);
+    setTimeout(() => {
+      shoot(predatorStackTime[reload][1]);
+    }, predatorStackTime[reload][2]);
+    setTimeout(() => {
+      window.extern.onKeyDown(5);
+      window.extern.onKeyUp(5);
+    }, predatorStackTime[reload][3]);
+  }
+}
+function shoot(t) {
+  isFiring = true;
+  window.extern.onKeyDown(36);
+  setTimeout(() => {
+    window.extern.onKeyUp(36);
+  }, t);
+}
+document.addEventListener("mousedown", function (ev) {
+  // track left and right buttons separately:
+  if (ev.button === 0) { // left mouse
+    mousePressed = true;
+    if (mouseLocked) {
+      isFiring = true;
+      try { window.extern.onKeyDown(36); } catch (e) {}
+      setTimeout(() => {
+        try { window.extern.onKeyDown(36); } catch (e) {}
+      }, 10);
+    }
+  } else if (ev.button === 2) { // right mouse -> used to enable aimbot while held
+    rightMouseDown = true;
+  }
+});
+document.addEventListener("mouseup", function (ev) {
+  if (ev.button === 0) {
+    mousePressed = false;
+    if (ev.button === 0) {
+      try { window.extern.onKeyUp(36); } catch(e){}
+    }
+  } else if (ev.button === 2) {
+    rightMouseDown = false;
+    // when right mouse released, ensure we stop any locked aim/firing and drone aim-only state
+    if (mouseLocked) {
+      mouseLocked = false;
+      try { ensureDroneAimOnlyState(); } catch (e) {}
+      try {
+        window.extern.onTouchMove(-1, mouseX, mouseY, true);
+      } catch (e) {}
+      setTimeout(() => {
+        try { window.extern.onKeyUp(36); } catch (e) {}
+      }, 80);
+    }
+  }
+});
+// <<< INSERT THE FOLLOWING BLOCK RIGHT HERE (paste exactly once) >>>
+/* ---------- ADD: Space key aimbot trigger (used when drone aim-only is enabled) ---------- */
+let spaceDown = false;
+
+// Track Space key presses separately (so we can rebind aimbot trigger to Space).
+// Use capture=true so we see the key even if other handlers stopPropagation.
+document.addEventListener("keydown", function (e) {
+  if (e.code === "Space" || e.keyCode === 32) {
+    spaceDown = true;
+  }
+}, true);
+
+document.addEventListener("keyup", function (e) {
+  if (e.code === "Space" || e.keyCode === 32) {
+    spaceDown = false;
+  }
+}, true);
+
+// Helper used in place of rightMouseDown checks: returns true if the configured aimbot trigger is active.
+// When useDroneAimOnlyForMinions is ON the aimbot trigger becomes Space; otherwise it's Right-Click.
+function isAimbotTriggerActive() {
+  return useDroneAimOnlyForMinions ? !!spaceDown : !!rightMouseDown;
+}
+/* ---------- END ADD ---------- */
+// Optional: prevent context menu while right-clicking (comment/uncomment as desired)
+document.addEventListener("contextmenu", function (ev) {
+  // ev.preventDefault(); // uncomment to suppress default context menu while using right-click aimbot
+}, true);
+
+document.addEventListener("touchstart", function (ev) {
+  isShooting = true;
+});
+document.addEventListener("touchend", function (ev) {
+  isShooting = false;
+});
+document.addEventListener(
+  "mousemove",
+  function (ev) {
+    if (isSpinning) {
+      ev.stopImmediatePropagation();
+      ev.preventDefault();
+    }
+  },
+  true
+);
+document.addEventListener(
+  "touchmove",
+  function (ev) {
+    if (isSpinning) {
+      ev.stopImmediatePropagation();
+      ev.preventDefault();
+    }
+  },
+  true
+);
+// key binds
+const KeyToToggleAimbot = "KeyU";
+const KeyToStack = "KeyI";
+const KeyToToggleMenu = "KeyM";
+
+document.addEventListener("keydown", function (ev) {
+  if (ev.code === KeyToToggleAimbot) {
+    isAimbotActive ^= 1;
+    if (window.__common__ && window.__common__.active_gamemode === "sandbox") {
+      window.extern &&
+        window.extern.inGameNotification(
+          "Aimbot Doesn't Work in Sandbox",
+          0xF533FF
+        );
+      isAimbotActive = 0;
+    } else {
+      window.extern &&
+        window.extern.inGameNotification(
+          isAimbotActive ? "Aimbot: ON" : "Aimbot: OFF",
+          0xF533FF
+        );
+    }
+    const aimbotCheckbox = document.getElementById("aimbot-checkbox");
+    if (aimbotCheckbox) aimbotCheckbox.checked = Boolean(isAimbotActive);
+  }
+  else if (ev.code === KeyToStack) {
+    if (["Hunter", "Predator"].includes(playerTank)) {
+      stack();
+      window.extern &&
+        window.extern.inGameNotification("Stacking Bullets...", 0xF533FF);
+    }
+  }
+  else if (ev.code === KeyToToggleMenu) {
+    if (!menuContainer) return;
+    const isHidden = menuContainer.style.display === "none";
+    menuContainer.style.display = isHidden ? "block" : "none";
+  }
+});
+
+// canvas hooks used to parse game render
+let ctxTransform;
+a._("setTransform", (context, ...args) => {
+  ctxTransform = args;
+  return [context, args];
+});
+
+a._("drawImage", (context, ...args) => {
+  if (args[0].renderMethod) {
+    const x = ctxTransform[4] + args[1];
+    const y = ctxTransform[5] + args[2];
+    if (args[0].renderMethod.method === "text") {
+      text.push({
+        x,
+        y,
+        cw: args[0].width,
+        ch: args[0].height,
+        mx: x + args[0].width / 4,
+        my: y + args[0].height / 4,
+        text: args[0].renderMethod.text,
+      });
+    }
+  }
+  return [context, args];
+});
+
+a._("strokeText", (context, ...args) => {
+  if (context.canvas.id !== "canvas") {
+    context.canvas.renderMethod = {
+      method: "text",
+      text: args[0],
+      args,
+      fillStyle: context.fillStyle,
+    };
+    if (args[0].startsWith("Lvl ")) {
+      if (args[0][5] === " ") {
+        playerLevel = Number(args[0].slice(4, 5));
+        playerTank = args[0].slice(6);
+      } else {
+        playerLevel = Number(args[0].slice(4, 6));
+        playerTank = args[0].slice(7);
+      }
+    }
+  }
+  return [context, args];
+});
+a._("arc", (context, ...args) => {
+  // tank detection (unchanged)
+  if (
+    context.canvas.id === "canvas" &&
+    ctxTransform[4] === lastArc[0] &&
+    ctxTransform[5] === lastArc[1]
+  ) {
+    tankShapes.push({
+      x: ctxTransform[4],
+      y: ctxTransform[5],
+      radius: Math.hypot(ctxTransform[1], ctxTransform[0]),
+      fillStyle: context.fillStyle,
+    });
+    lastArc = [Infinity, Infinity];
+  } else {
+    lastArc = [ctxTransform[4], ctxTransform[5]];
+  }
+
+  // detect small arcs likely to be bullets and stash them for overlay
+  try {
+    if (context.canvas && context.canvas.id === "canvas") {
+      const smallRadius = Math.hypot(ctxTransform[1], ctxTransform[0]);
+      const BULLET_RADIUS_THRESHOLD = 8; // conservative threshold
+      if (smallRadius > 0 && smallRadius <= BULLET_RADIUS_THRESHOLD) {
+        const bx = ctxTransform[4];
+        const by = ctxTransform[5];
+        const s = (typeof currentComputedBulletSpeed === "number") ? currentComputedBulletSpeed : null;
+        bulletPositions.push({ x: bx, y: by, radius: smallRadius, speed: s, fillStyle: context.fillStyle });
+      }
+    }
+  } catch (e) {
+    if (isDebug) console.warn("[arc-hook] bullet detection error", e);
+  }
+
+  return [context, args];
+});
+a._("stroke", (context, ...args) => {
+  if (
+    ["#cccccc", "#cdcdcd"].includes(context.fillStyle) &&
+    context.strokeStyle === "#000000"
+  ) {
+    fov = context.globalAlpha / gameStyle.ren_grid_base_alpha;
+  }
+  return [context, args];
+});
+
+a._("strokeRect", (context, ...args) => {
+  const t = context.getTransform();
+  minimapPos = [t.e, t.f];
+  minimapSize = [t.a, t.d];
+  return [context, args];
+});
+
+// path extraction for arrow/player pos
+let position = 0;
+let vertex = [];
+
+a._("beginPath", (context, ...args) => {
+  position = 0;
+  vertex = [];
+  return [context, args];
+});
+a._("moveTo", (context, ...args) => {
+  position = 1;
+  vertex.push(args);
+  return [context, args];
+});
+a._("lineTo", (context, ...args) => {
+  position++;
+  vertex.push(args);
+  return [context, args];
+});
+a._("fill", (context, ...args) => {
+  if (
+    context.fillStyle === "#000000" &&
+    context.globalAlpha > 0.949 &&
+    position === 3
+  ) {
+    arrowPos = getAverage(vertex);
+    setPlayerPos();
+  }
+  else if (
+    position === 4 &&
+    context.fillStyle &&
+    context.fillStyle.toLowerCase().includes("ffe869")
+  ) {
+    const [rawX, rawY] = getAverage(vertex);
+    const centerX = ctxTransform[4] + rawX;
+    const centerY = ctxTransform[5] + rawY;
+    neutralSquares.push([centerX, centerY]);
+  }
+  else if (
+    position === 5 &&
+    context.fillStyle &&
+    context.fillStyle.toLowerCase().includes("768dfc")
+  ) {
+    const [rawX, rawY] = getAverage(vertex);
+    const centerX = ctxTransform[4] + rawX;
+    const centerY = ctxTransform[5] + rawY;
+    neutralPentagons.push([centerX, centerY]);
+  }
+
+  else if (
+    position === 3 &&
+    context.fillStyle &&
+    context.fillStyle.toLowerCase().includes("fc7677")
+  ) {
+    const [rawX, rawY] = getAverage(vertex);
+    const centerX = ctxTransform[4] + rawX;
+    const centerY = ctxTransform[5] + rawY;
+    neutralTriangles.push([centerX, centerY]);
+  }
+
+  return [context, args];
+});
+
+function getAverage(points) {
+  let tx = 0,
+    ty = 0;
+  points.forEach((point) => {
+    tx += point[0];
+    ty += point[1];
+  });
+  return [tx / points.length, ty / points.length];
+}
+
+function onFrame() {
+  window.requestAnimationFrame(onFrame);
+
+  // update shooter position history so we can estimate our (shooter) velocity
+  playerPositionTable.push({
+    x: playerX,
+    y: playerY,
+    timestamp: performance.now(),
+  });
+  if (playerPositionTable.length > playerVelocityPredictionSampleSize) playerPositionTable.shift();
+
+  // compute shooter velocity (simple average like getVelocity)
+  (function computeShooterVel() {
+    let tx = 0, ty = 0, dataPoints = 0;
+    for (let i = 1; i < playerPositionTable.length; ++i) {
+      const a = playerPositionTable[i];
+      const b = playerPositionTable[i - 1];
+      if (!a || !b) continue;
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      const dt = a.timestamp - b.timestamp;
+      if (dt < 6) continue; // ignore tiny dt to avoid spikes
+      tx += dx / dt;
+      ty += dy / dt;
+      dataPoints++;
+    }
+    if (dataPoints > 0) {
+      shooterVelocity = [tx / dataPoints, ty / dataPoints];
+    } else {
+      shooterVelocity = [0, 0];
+    }
+  })();
+
+  // Update currentComputedBulletSpeed so arc-hook can attach it to bullets
+  if (useConvarBulletSpeed) {
+    try {
+      const info = getCurrentBulletSpeed();
+      if (info && info.ok && typeof info.computedBulletSpeed === "number") {
+        currentComputedBulletSpeed = info.computedBulletSpeed;
+      } else {
+        currentComputedBulletSpeed = calculateMainBulletSpeed();
+      }
+    } catch (e) {
+      currentComputedBulletSpeed = calculateMainBulletSpeed();
+    }
+  } else {
+    currentComputedBulletSpeed = calculateMainBulletSpeed();
+  }
+
+  getPlayers();
+  matchPlayers();
+
+  if (isDebug) {
+    const ctx = document.getElementById("canvas").getContext("2d");
+    ctx.save();
+    ctx.strokeStyle = "#FF0000";
+    ctx.lineWidth = 1;
+    const centerX = ctx.canvas.width / 2;
+    const centerY = ctx.canvas.height / 2;
+    players.forEach((plr) => {
+      if (!plr.teammate) {
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.lineTo(plr.x, plr.y);
+        ctx.stroke();
+      }
+    });
+    ctx.restore();
+  }
+
+  forceU();
+
+  // New behavior: if holding right mouse and autofarmOnRightHold is enabled, prioritize player in sight,
+  // otherwise do autofarm while holding right-click. If not holding right-click (or setting disabled),
+  // use normal flow (manual aimbot + optional autofarm).
+  if (isAimbotTriggerActive() && autofarmOnRightHold) {
+    // Find highest-weight visible enemy (if any)
+    const enemy = players
+      .filter(plr => !plr.teammate)
+      .reduce((acc, cur) => {
+        if (!acc) return cur;
+        return getPlayerWeight(cur) > getPlayerWeight(acc) ? cur : acc;
+      }, null);
+
+    if (enemy) {
+      // Continuously aim at the enemy while right-click is held.
+      // Use force=true so aim() will run even if isAimbotActive is false.
+      aim(true);
+    } else {
+      // No enemy visible: perform autofarm tick (aim & possibly fire)
+      autofarmTick();
+    }
+  } else {
+    // Normal behavior
+    aim();
+    if (isAutoFarm) {
+      autofarmTick();
+    }
+  }
+
+  text = [];
+  tankShapes = [];
+  getTeam();
+
+  // Clear per-frame collections after overlay drawing happens
+  // Bullet speed overlay handled below, so keep bulletPositions until then.
+
+  // If enabled, draw bullet speeds overlay on the main canvas for debugging/verification.
+  if (showBulletSpeeds && bulletPositions && bulletPositions.length > 0) {
+    try {
+      const ctx = document.getElementById("canvas").getContext("2d");
+      ctx.save();
+      ctx.font = "12px Arial";
+      ctx.fillStyle = "#FFFFFF";
+      ctx.textBaseline = "bottom";
+      bulletPositions.forEach((bp) => {
+        const txt = (bp.speed === null || typeof bp.speed !== "number") ? "n/a" : bp.speed.toFixed(3);
+        // Draw small background for readability
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.fillRect(bp.x + 6 - 2, bp.y - 18, ctx.measureText(txt).width + 6, 16);
+        ctx.fillStyle = "#FFD700";
+        ctx.fillText(txt, bp.x + 8, bp.y - 6);
+      });
+      ctx.restore();
+    } catch (e) {
+      if (isDebug) console.warn("[bullet-overlay] draw error", e);
+    }
+  }
+
+  // Clear collected per-frame arrays so next frame recomputes fresh
+  bulletPositions = [];
+  neutralSquares = [];
+  neutralPentagons = [];
+  neutralTriangles = [];
+  text = [];
+  tankShapes = [];
+
+  if (
+    isSpinning &&
+    !isShooting &&
+    !isFiring &&
+    window.extern &&
+    window.extern.doesHaveTank()
+  ) {
+    spinAngle += spinSpeed;
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
+    const radius = 120;
+    const targetX = cx + radius * Math.cos(spinAngle);
+    const targetY = cy + radius * Math.sin(spinAngle);
+    if (typeof window.extern.onTouchMove === "function") {
+      window.extern.onTouchMove(-1, targetX, targetY, true);
+    } else if (typeof window.extern.onMouseMove === "function") {
+      window.extern.onMouseMove(targetX, targetY);
+    }
+  }
+
+  if (window.extern && window.extern.doesHaveTank() && !hasJoined) {
+    hasJoined = true;
+    window.extern.inGameNotification("Welcome to Menu v2. Press M for menu.", 0x6670ff);
+  }
+}
+
+function nearestShapeWorld(arr) {
+  let nearest = null;
+  let nearestDist = Infinity;
+  for (const [cx, cy] of arr) {
+    const [wx, wy] = getRenderedWorldPosition(cx, cy);
+    const dist = getDistance(playerX, playerY, wx, wy);
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearest = [wx, wy];
+    }
+  }
+  return nearest;
+}
+
+function onGameStart() {
+  if (typeof extern === "undefined") return;
+  clearInterval(checkGameStart);
+  window.requestAnimationFrame(onFrame);
+
+  window.extern.onKeyDown = new Proxy(window.extern.onKeyDown, {
+    apply: function (method, context, args) {
+      if (args[0] === 36) {
+        isFiring = true;
+      }
+      if (args[0] === 21 && !args[1]) return;
+      return Reflect.apply(method, context, args);
+    },
+  });
+  window.extern.onKeyUp = new Proxy(window.extern.onKeyUp, {
+    apply: function (method, context, args) {
+      if (args[0] === 36) {
+        isFiring = false;
+      }
+      if (args[0] === 21 && !args[1]) return;
+      return Reflect.apply(method, context, args);
+    },
+  });
+
+  const mouseHandler = {
+    apply: function (method, context, args) {
+      if (!args[3]) {
+        [mouseX, mouseY] = [args[1], args[2]];
+        if (mouseLocked) return;
+      }
+      return Reflect.apply(method, context, args);
+    },
+  };
+  window.extern.onTouchStart = new Proxy(window.extern.onTouchStart, mouseHandler);
+  window.extern.onTouchMove  = new Proxy(window.extern.onTouchMove,  mouseHandler);
+  window.extern.onTouchEnd   = new Proxy(window.extern.onTouchEnd,   mouseHandler);
+
+  window.extern.set_convar = new Proxy(window.extern.set_convar, {
+    apply: function (method, context, args) {
+      gameStyle[args[0]] = args[1];
+      return Reflect.apply(method, context, args);
+    },
+  });
+
+  window.extern.execute = new Proxy(window.extern.execute, {
+    apply: function (method, context, args) {
+      if (args[0].startsWith("net_replace_color 3 ")) {
+        gameStyle.teamBlue =
+          args[0][20] === "0" ? "#" + args[0].slice(22) : args[0].slice(20);
+      }
+      if (args[0].startsWith("net_replace_color 4 ")) {
+        gameStyle.teamRed =
+          args[0][20] === "0" ? "#" + args[0].slice(22) : args[0].slice(20);
+      }
+      if (args[0].startsWith("net_replace_color 5 ")) {
+        gameStyle.teamPurple =
+          args[0][20] === "0" ? "#" + args[0].slice(22) : args[0].slice(20);
+      }
+      if (args[0].startsWith("net_replace_color 6 ")) {
+        gameStyle.teamGreen =
+          args[0][20] === "0" ? "#" + args[0].slice(22) : args[0].slice(20);
+      }
+      if (args[0].startsWith("net_replace_color 8 ")) {
+        gameStyle.square =
+          args[0][20] === "0" ? "#" + args[0].slice(22) : args[0].slice(20);
+      }
+      if (args[0].startsWith("net_replace_color 9 ")) {
+        gameStyle.triangle =
+          args[0][20] === "0" ? "#" + args[0].slice(22) : args[0].slice(20);
+      }
+      if (args[0].startsWith("net_replace_color 10 ")) {
+        gameStyle.pentagon =
+          args[0][21] === "0" ? "#" + args[0].slice(23) : args[0].slice(21);
+      }
+      return Reflect.apply(method, context, args);
+    },
+  });
+}
+
+const checkGameStart = setInterval(onGameStart, 400);
+
+function getTeam() {
+  // if gamemode is FFA, ensure we don't treat any fillStyle as teammate
+  if (isFfaMode()) {
+    teamColor = "";
+    return;
+  }
+
+  const partyLinkButton = document.getElementById("copy-party-link");
+  if (!partyLinkButton) {
+    // no party/team UI found: clear teamColor (prevents stale team from previous matches)
+    teamColor = "";
+    return;
+  }
+  switch (partyLinkButton.className) {
+    case "active blue":
+      teamColor = "teamBlue";
+      break;
+    case "active purple":
+      teamColor = "teamPurple";
+      break;
+    case "active green":
+      teamColor = "teamGreen";
+      break;
+    case "active red":
+      teamColor = "teamRed";
+      break;
+    default:
+      teamColor = "";
+      break;
+  }
+}
+
+function getActiveGamemode() {
+  try {
+    if (window.__common__ && typeof window.__common__.active_gamemode === "string") {
+      return window.__common__.active_gamemode.toLowerCase();
+    }
+  } catch (e) {}
+  try {
+    const gmEl = document.querySelector(".gamemode-title, .gamemode-name, .mode-name");
+    if (gmEl && gmEl.innerText) return gmEl.innerText.toLowerCase();
+  } catch (e) {}
+  return "";
+}
+function isFfaMode() {
+  const gm = getActiveGamemode();
+  if (!gm) return false;
+  return gm.includes("ffa") || gm.includes("free") || gm.includes("freeforall");
+}
+function isTeamMode() {
+  const gm = getActiveGamemode();
+  const teamNames = ["team", "teams", "tdm", "domination", "ctf"];
+  if (gm) {
+    for (const t of teamNames) if (gm.includes(t)) return true;
+    if (gm.includes("ffa") || gm.includes("free")) return false;
+  }
+  const partyBtn = document.getElementById("copy-party-link");
+  return !!partyBtn && partyBtn.className && partyBtn.className.trim() !== "";
+}
+
+let menuContainer = null;
+let isBlackBg = false;
+let blackBgDiv = null;
+
+function createUnifiedMenu() {
+  // If menu already exists, don't recreate; just leave it (we only want one instance)
+  try {
+    if (menuContainer && menuContainer.parentNode) {
+      menuContainer.style.display = "none";
+      return;
+    }
+  } catch (e) {}
+
+  // Deep dive: use diep.io-like UI variables + region/play button styling provided by user
+  const style = document.createElement("style");
+  style.textContent = `
+    :root{
+      --inset-width: 100vw;
+      --inset-height: 100vh;
+      --netcolor0: #555555;
+      --netcolor1: #999999;
+      --netcolor2: #00b2e1;
+      --netcolor3: #00b2e1;
+      --netcolor4: #f14e54;
+      --netcolor5: #bf7ff5;
+      --netcolor6: #00e16e;
+      --netcolor7: #8aff69;
+      --netcolor8: #ffe869;
+      --netcolor9: #fc7677;
+      --netcolor10: #768dfc;
+      --netcolor11: #f177dd;
+      --netcolor12: #ffe869;
+      --netcolor13: #43ff91;
+      --netcolor14: #bbbbbb;
+      --netcolor15: #f14e54;
+      --netcolor16: #fcc376;
+      --netcolor17: #c0c0c0;
+      --net-border: var(--netcolor0);
+      --net-cannon: var(--netcolor1);
+      --net-tank: var(--netcolor2);
+      --net-team-blue: var(--netcolor3);
+      --net-team-red: var(--netcolor4);
+      --net-team-purple: var(--netcolor5);
+      --net-team-green: var(--netcolor6);
+      --net-shiny: var(--netcolor7);
+      --net-enemy-square: var(--netcolor8);
+      --net-enemy-triangle: var(--netcolor9);
+      --net-enemy-pentagon: var(--netcolor10);
+      --net-neutral: var(--netcolor12);
+      --uicolor0: #43fff9;
+      --uicolor1: #82ff43;
+      --uicolor2: #ff4343;
+      --uicolor3: #ffde43;
+      --uicolor4: #437fff;
+      --uicolor5: #8543ff;
+      --uicolor6: #f943ff;
+      --border-color: rgba(0,0,0,0.375);
+      --border-radius-setting: 6px;
+      --panel-bg: rgba(10,14,20,0.95);
+      --panel-accent: linear-gradient(180deg, rgba(0,178,225,0.12), rgba(0,142,180,0.06));
+      --muted: #9fbfe6;
+    }
+
+    .diep-menu {
+      position: fixed;
+      top: 64px;
+      left: 64px;
+      width: 360px;
+      background: var(--panel-bg);
+      color: #e6f0fb;
+      font-family: "Ubuntu", "Segoe UI", Arial, sans-serif;
+      font-size: 13px;
+      z-index: 999999;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      user-select: none;
+      border: 1px solid var(--border-color);
+      border-radius: calc(var(--border-radius-setting) * 1px);
+      overflow: hidden;
+    }
+    .diep-header {
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:10px 12px;
+      background: var(--panel-accent);
+      cursor: move;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+    }
+    .diep-title { font-weight:700; color:#fff; font-size:15px; }
+    .diep-close {
+      margin-left:auto;
+      background: transparent;
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.06);
+      width: 28px; height: 24px;
+      display:inline-flex; align-items:center; justify-content:center;
+      cursor:pointer;
+    }
+
+    .diep-body { padding: 12px; display:flex; flex-direction:column; gap:10px; }
+
+    .diep-tabs { display:flex; gap:8px; }
+    .diep-tab {
+      flex:1;
+      text-align:center;
+      padding:6px 6px;
+      background: rgba(255,255,255,0.02);
+      color: var(--muted);
+      cursor:pointer;
+      border: 1px solid rgba(255,255,255,0.03);
+      font-weight:600;
+      user-select:none;
+    }
+    .diep-tab.active {
+      background: linear-gradient(180deg, rgba(67,127,255,0.12), rgba(0,178,225,0.06));
+      color: #fff;
+      border-color: rgba(67,127,255,0.18);
+    }
+
+    .diep-section { display:none; padding-top:6px; }
+    .diep-section.active { display:block; }
+
+    .diep-row { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.02); }
+    .diep-row:last-child { border-bottom:none; }
+    .diep-label { color:#dbeeff; font-weight:600; }
+
+    .diep-checkbox { width:16px;height:16px; transform:scale(1.05); margin-left:6px; }
+
+    .diep-slider { width:160px; }
+
+    .diep-small { font-size:11px; color:var(--muted); margin-top:6px; line-height:1.2; }
+
+    /* Play-like button (diep style) */
+    .diep-button {
+      -webkit-tap-highlight-color: rgba(0,0,0,0);
+      user-select:none;
+      pointer-events: all;
+      font-family: "Ubuntu", sans-serif;
+      box-sizing: border-box;
+      outline: none;
+      padding: 0.35rem 0.6rem;
+      cursor: pointer;
+      border: calc(2.25px - 0.05px) solid var(--border-color);
+      color: white;
+      text-shadow: 0.8px 0.8px 0 #000, -0.8px 0.8px 0 #000;
+      filter: brightness(95%) contrast(90%);
+      transition: filter 0.12s ease-in-out, transform 0.06s ease;
+      position: relative;
+      font-size: 0.95em;
+      background-color: var(--net-tank);
+      border-left: 2.25px solid var(--border-color);
+      border-radius: calc(var(--border-radius-setting) * 0.28rem);
+      height: 2.2rem;
+      min-width: 8rem;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .diep-button:active { transform: translateY(1px) scale(0.997); filter: brightness(92%); }
+
+    .diep-select {
+      width:100%;
+      padding:8px;
+      background: rgba(0,0,0,0.18);
+      border:1px solid rgba(255,255,255,0.04);
+      color:#e6f0fb;
+    }
+
+    .diep-footer { padding:8px 12px; font-size:11px; color:var(--muted); text-align:right; border-top:1px solid rgba(255,255,255,0.02); background: rgba(255,255,255,0.01); }
+
+    /* Prevent menu controls from being affected by page-level pointer handlers */
+    .diep-menu * { pointer-events: auto; }
+
+    /* small responsive */
+    @media (max-width: 480px) {
+      .diep-menu { left: 12px; top: 12px; width: calc(100% - 24px); }
+    }
+  `;
+  document.head.appendChild(style);
+
+  // container
+  menuContainer = document.createElement("div");
+  menuContainer.className = "diep-menu";
+
+  // header
+  const header = document.createElement("div");
+  header.className = "diep-header";
+  const title = document.createElement("div");
+  title.className = "diep-title";
+  title.innerText = "Menu v2 — Swan RC";
+  header.appendChild(title);
+  const closeBtn = document.createElement("div");
+  closeBtn.className = "diep-close";
+  closeBtn.innerText = "×";
+  closeBtn.title = "Close menu (M)";
+  closeBtn.addEventListener("click", (e) => { e.stopPropagation(); menuContainer.style.display = "none"; });
+  header.appendChild(closeBtn);
+
+  // body
+  const body = document.createElement("div");
+  body.className = "diep-body";
+
+  // tabs
+  const tabsWrap = document.createElement("div");
+  tabsWrap.className = "diep-tabs";
+  const tabs = [
+    { id: "spin", label: "Spin" },
+    { id: "aim", label: "Aim" },
+    { id: "farm", label: "Farm" },
+    { id: "visuals", label: "Visuals" },
+    { id: "builds", label: "Builds" },
+    { id: "info", label: "Info" }
+  ];
+  const tabButtons = {};
+  tabs.forEach((t, idx) => {
+    const btn = document.createElement("div");
+    btn.className = "diep-tab" + (idx === 0 ? " active" : "");
+    btn.id = `diep-tab-${t.id}`;
+    btn.innerText = t.label;
+    btn.addEventListener("click", (ev) => { ev.stopPropagation(); switchTab(t.id); });
+    tabsWrap.appendChild(btn);
+    tabButtons[t.id] = btn;
+  });
+  body.appendChild(tabsWrap);
+
+  // sections container
+  const sections = {};
+  function makeSection(id) {
+    const sec = document.createElement("div");
+    sec.className = "diep-section" + (id === "spin" ? " active" : "");
+    sec.id = `diep-section-${id}`;
+    sections[id] = sec;
+    body.appendChild(sec);
+    return sec;
+  }
+
+  // helper: append row with stopPropagation so page-level handlers won't steal clicks
+  function appendRowWithStop(sec, row) {
+    row.addEventListener("mousedown", (e) => e.stopPropagation());
+    row.addEventListener("click", (e) => e.stopPropagation());
+    sec.appendChild(row);
+  }
+
+  // Spin section
+  const secSpin = makeSection("spin");
+  {
+    const row1 = document.createElement("div"); row1.className = "diep-row";
+    const label1 = document.createElement("div"); label1.className = "diep-label"; label1.innerText = "Enable Spinner";
+    const cb1 = document.createElement("input"); cb1.type = "checkbox"; cb1.id = "spinner-checkbox"; cb1.className = "diep-checkbox";
+    cb1.checked = Boolean(isSpinning);
+    cb1.addEventListener("change", function (e) { e.stopPropagation(); isSpinning = this.checked; if (window.extern) window.extern.inGameNotification(isSpinning ? "Spinner: ON" : "Spinner: OFF", 0x2b7bb8); });
+    row1.appendChild(label1); row1.appendChild(cb1); appendRowWithStop(secSpin, row1);
+
+    const row2 = document.createElement("div"); row2.className = "diep-row";
+    const label2 = document.createElement("div"); label2.className = "diep-label"; label2.innerText = `Speed: ${spinSpeed.toFixed(2)}`;
+    const slider = document.createElement("input"); slider.type = "range"; slider.min = "0"; slider.max = "2"; slider.step = "0.01"; slider.value = spinSpeed.toString(); slider.className = "diep-slider"; slider.id = "spin-slider";
+    slider.addEventListener("input", (ev) => { ev.stopPropagation(); spinSpeed = parseFloat(ev.target.value); label2.innerText = `Speed: ${spinSpeed.toFixed(2)}`; });
+    row2.appendChild(label2); row2.appendChild(slider); appendRowWithStop(secSpin, row2);
+  }
+
+  // Aim section
+  const secAim = makeSection("aim");
+  {
+    const row1 = document.createElement("div"); row1.className = "diep-row";
+    const label1 = document.createElement("div"); label1.className = "diep-label"; label1.innerText = "Enable Aimbot";
+    const cbA = document.createElement("input"); cbA.type = "checkbox"; cbA.id = "aimbot-checkbox"; cbA.className = "diep-checkbox";
+    cbA.checked = Boolean(isAimbotActive);
+    cbA.addEventListener("change", function (e) { e.stopPropagation(); isAimbotActive = this.checked; if (window.extern) window.extern.inGameNotification(isAimbotActive ? "Aimbot: ON" : "Aimbot: OFF", 0x2b7bb8); });
+    row1.appendChild(label1); row1.appendChild(cbA); appendRowWithStop(secAim, row1);
+
+    const row2 = document.createElement("div"); row2.className = "diep-row";
+    const label2 = document.createElement("div"); label2.className = "diep-label"; label2.innerText = "Use Convar Bullet Speed";
+    const cbC = document.createElement("input"); cbC.type = "checkbox"; cbC.id = "convar-bullet-checkbox"; cbC.className = "diep-checkbox";
+    cbC.checked = Boolean(useConvarBulletSpeed);
+    cbC.addEventListener("change", function (e) { e.stopPropagation(); useConvarBulletSpeed = this.checked; if (window.extern) window.extern.inGameNotification(useConvarBulletSpeed ? "Aimbot: Using convar bullet speed" : "Aimbot: Using calculated bullet speed", 0x2b7bb8); });
+    row2.appendChild(label2); row2.appendChild(cbC); appendRowWithStop(secAim, row2);
+
+    const row3 = document.createElement("div"); row3.className = "diep-row";
+    const label3 = document.createElement("div"); label3.className = "diep-label"; label3.innerText = "Aim-only for Drones";
+    const cbD = document.createElement("input"); cbD.type = "checkbox"; cbD.id = "drone-aimonly-checkbox"; cbD.className = "diep-checkbox";
+    cbD.checked = Boolean(useDroneAimOnlyForMinions);
+    cbD.addEventListener("change", function (e) {
+      e.stopPropagation();
+      useDroneAimOnlyForMinions = this.checked;
+      if (window.extern) window.extern.inGameNotification(useDroneAimOnlyForMinions ? "Drone aim-only: ON (Space to trigger)" : "Drone aim-only: OFF (Right-click to trigger)", 0x2b7bb8);
+    });
+    row3.appendChild(label3); row3.appendChild(cbD); appendRowWithStop(secAim, row3);
+
+    const info = document.createElement("div"); info.className = "diep-small"; info.innerText = "Trigger: Right-Click (normal) or Space (when drone mode enabled). Hold to engage aimbot.";
+    info.addEventListener("mousedown", (e) => e.stopPropagation());
+    secAim.appendChild(info);
+  }
+
+  // Farm section
+  const secFarm = makeSection("farm");
+  {
+    const row1 = document.createElement("div"); row1.className = "diep-row";
+    const label1 = document.createElement("div"); label1.className = "diep-label"; label1.innerText = "Enable AutoFarm";
+    const cbF = document.createElement("input"); cbF.type = "checkbox"; cbF.id = "autofarm-checkbox"; cbF.className = "diep-checkbox";
+    cbF.checked = Boolean(isAutoFarm);
+    cbF.addEventListener("change", function (e) { e.stopPropagation(); isAutoFarm = this.checked; if (!isAutoFarm) { autoAimX = autoAimY = null; } if (window.extern) window.extern.inGameNotification(isAutoFarm ? "AutoFarm: ON" : "AutoFarm: OFF", 0x2b7bb8); });
+    row1.appendChild(label1); row1.appendChild(cbF); appendRowWithStop(secFarm, row1);
+
+    const row2 = document.createElement("div"); row2.className = "diep-row";
+    const label2 = document.createElement("div"); label2.className = "diep-label"; label2.innerText = "Autofarm on Right-Hold";
+    const cbFH = document.createElement("input"); cbFH.type = "checkbox"; cbFH.id = "autofarm-hold-checkbox"; cbFH.className = "diep-checkbox";
+    cbFH.checked = Boolean(autofarmOnRightHold);
+    cbFH.addEventListener("change", function (e) { e.stopPropagation(); autofarmOnRightHold = this.checked; if (window.extern) window.extern.inGameNotification(autofarmOnRightHold ? "Autofarm on Right-Hold: ON" : "Autofarm on Right-Hold: OFF", 0x2b7bb8); });
+    row2.appendChild(label2); row2.appendChild(cbFH); appendRowWithStop(secFarm, row2);
+
+    const priority = document.createElement("div"); priority.className = "diep-small"; priority.style.marginTop = "6px"; priority.innerText = "Priority:";
+    secFarm.appendChild(priority);
+
+    const prioWrap = document.createElement("div"); prioWrap.style.display = "flex"; prioWrap.style.gap = "6px"; prioWrap.style.marginTop = "6px";
+    const pent = document.createElement("label"); pent.style.flex = "1"; pent.style.display = "flex"; pent.style.alignItems = "center"; pent.style.gap = "6px";
+    const pentIn = document.createElement("input"); pentIn.type = "radio"; pentIn.name = "farm-priority"; pentIn.id = "farm-priority-pentagon"; pentIn.value = "pentagon";
+    pentIn.checked = (farmPriority === "pentagon"); pentIn.addEventListener("change", (e)=> { e.stopPropagation(); if (pentIn.checked) farmPriority = "pentagon"; });
+    pent.appendChild(pentIn); pent.appendChild(document.createTextNode("Pentagon"));
+    const sq = document.createElement("label"); sq.style.flex = "1"; sq.style.display = "flex"; sq.style.alignItems = "center"; sq.style.gap = "6px";
+    const sqIn = document.createElement("input"); sqIn.type = "radio"; sqIn.name = "farm-priority"; sqIn.id = "farm-priority-square"; sqIn.value = "square";
+    sqIn.checked = (farmPriority === "square"); sqIn.addEventListener("change", (e)=> { e.stopPropagation(); if (sqIn.checked) farmPriority = "square"; });
+    sq.appendChild(sqIn); sq.appendChild(document.createTextNode("Square"));
+    const tri = document.createElement("label"); tri.style.flex = "1"; tri.style.display = "flex"; tri.style.alignItems = "center"; tri.style.gap = "6px";
+    const triIn = document.createElement("input"); triIn.type = "radio"; triIn.name = "farm-priority"; triIn.id = "farm-priority-triangle"; triIn.value = "triangle";
+    triIn.checked = (farmPriority === "triangle"); triIn.addEventListener("change", (e)=> { e.stopPropagation(); if (triIn.checked) farmPriority = "triangle"; });
+    tri.appendChild(triIn); tri.appendChild(document.createTextNode("Triangle"));
+    prioWrap.appendChild(pent); prioWrap.appendChild(sq); prioWrap.appendChild(tri);
+    secFarm.appendChild(prioWrap);
+  }
+
+  // Visuals section
+  const secVis = makeSection("visuals");
+  {
+    const row1 = document.createElement("div"); row1.className = "diep-row";
+    const label1 = document.createElement("div"); label1.className = "diep-label"; label1.innerText = "Debug Lines";
+    const cb1 = document.createElement("input"); cb1.type = "checkbox"; cb1.id = "debug-checkbox"; cb1.className = "diep-checkbox";
+    cb1.checked = Boolean(isDebug);
+    cb1.addEventListener("change", function (e) { e.stopPropagation(); isDebug = this.checked; if (window.extern) window.extern.inGameNotification(isDebug ? "Debug Lines: ON" : "Debug Lines: OFF", 0x2b7bb8); });
+    row1.appendChild(label1); row1.appendChild(cb1); appendRowWithStop(secVis, row1);
+
+    const row2 = document.createElement("div"); row2.className = "diep-row";
+    const label2 = document.createElement("div"); label2.className = "diep-label"; label2.innerText = "Bullet Speed Overlay";
+    const cb2 = document.createElement("input"); cb2.type = "checkbox"; cb2.id = "show-bullet-speed-checkbox"; cb2.className = "diep-checkbox";
+    cb2.checked = Boolean(showBulletSpeeds);
+    cb2.addEventListener("change", function (e) { e.stopPropagation(); showBulletSpeeds = this.checked; if (window.extern) window.extern.inGameNotification(showBulletSpeeds ? "Bullet Speed Overlay: ON" : "Bullet Speed Overlay: OFF", 0x2b7bb8); });
+    row2.appendChild(label2); row2.appendChild(cb2); appendRowWithStop(secVis, row2);
+
+    const row3 = document.createElement("div"); row3.className = "diep-row";
+    const label3 = document.createElement("div"); label3.className = "diep-label"; label3.innerText = "Black Background";
+    const cb3 = document.createElement("input"); cb3.type = "checkbox"; cb3.id = "blackbg-checkbox"; cb3.className = "diep-checkbox";
+    cb3.checked = Boolean(isBlackBg);
+    cb3.addEventListener("change", function (e) { e.stopPropagation(); isBlackBg = this.checked; if (window.input && typeof window.input.set_convar === "function") { window.input.set_convar("ren_background_color", isBlackBg ? "#000000" : "#CDCDCD"); } if (window.extern) window.extern.inGameNotification(isBlackBg ? "Black background: ON" : "Black background: OFF", 0x2b7bb8); });
+    row3.appendChild(label3); row3.appendChild(cb3); appendRowWithStop(secVis, row3);
+  }
+
+  // Builds section
+  const secBuilds = makeSection("builds");
+  {
+    const presets = [
+      {name: 'rocketeer', build: '565656565656567878787878787822333'},
+      {name: 'skimmer', build: '565656565656484848484848487777777'},
+      {name: 'factory', build: '565656565656564848484848484777777'},
+      {name: 'spike', build: '5656565656565677744487777888222222222233333333338888888888111'},
+      {name: 'autosmasher', build: '5656565656565677744487777888222222222233333333338888888888111'},
+      {name: 'annihilator', build: '565656565656484848484848487777777'},
+      {name: 'battleship', build: '565656565656564848484848447777777'},
+      {name: 'autotrapper', build: '565656565656564444848877787878787'},
+      {name: 'streamliner', build: '565656565656564444488888878777777'},
+      {name: 'spreadshot', build: '565656565656567878787878787843242'},
+      {name: 'auto5', build: '565656565656567847847847847847878'},
+      {name: 'autogunner', build: '565656565656567847847847847847878'},
+      {name: 'landmine', build: '5656565656565677744487777888222222222233333333338888888888111'},
+      {name: 'tritrapper', build: '565656565656567878787878787823424'},
+      {name: 'megatrapper', build: '565656565656564444488888887777777'},
+      {name: 'overtrapper', build: '565656565656564848484848887777777'},
+      {name: 'gunnertrapper', build: '565656565656567847847847847847878'},
+      {name: 'sprayer', build: '565656565656567847847847847847878'},
+      {name: 'predator', build: '565656565656564784784784784784788'},
+      {name: 'manager', build: '565656565656568484848484844787777'},
+      {name: 'hybrid', build: '565656565656848484848484847777777'},
+      {name: 'fighter', build: '565656565656567878787878787823233'},
+      {name: 'booster', build: '565656565656567878787878787823233'},
+      {name: 'ranger', build: '565656565656564784784784784784784'},
+      {name: 'stalker', build: '565656565656564784784784784784784'},
+      {name: 'tripletwin', build: '565656565656567878787878787844444'},
+      {name: 'necromancer', build: '565656565656564848484848484777777'},
+      {name: 'pentashot', build: '565656565656567878787878787844442'},
+      {name: 'overlord', build: '565656565656568484848484848477223'},
+      {name: 'octotank', build: '565656565656567878787878787844423'},
+      {name: 'triplet', build: '565656565656567878787878787844444'}
+    ];
+
+    const selRow = document.createElement("div"); selRow.className = "diep-row";
+    const labelSel = document.createElement("div"); labelSel.className = "diep-label"; labelSel.innerText = "Preset:";
+    const select = document.createElement("select"); select.id = "builds-select"; select.className = "diep-select";
+    presets.forEach((p) => { const opt = document.createElement("option"); opt.value = p.build; opt.innerText = p.name; select.appendChild(opt); });
+    // ensure select receives focus and doesn't bubble to page handlers
+    select.addEventListener("mousedown", (e) => { e.stopPropagation(); select.focus(); });
+    select.addEventListener("click", (e) => e.stopPropagation());
+    selRow.appendChild(labelSel); selRow.appendChild(select); appendRowWithStop(secBuilds, selRow);
+
+    const applyRow = document.createElement("div"); applyRow.className = "diep-row";
+    const applyBtn = document.createElement("button"); applyBtn.className = "diep-button"; applyBtn.id = "apply-build-btn"; applyBtn.innerText = "Apply Build Now";
+    applyBtn.addEventListener("click", (e) => { e.stopPropagation(); applySelectedBuildNow(); });
+    applyRow.appendChild(document.createElement("div")); applyRow.appendChild(applyBtn); appendRowWithStop(secBuilds, applyRow);
+
+    const autoRow = document.createElement("div"); autoRow.className = "diep-row";
+    const labelAuto = document.createElement("div"); labelAuto.className = "diep-label"; labelAuto.innerText = "Auto-Apply Build";
+    const cbAuto = document.createElement("input"); cbAuto.type = "checkbox"; cbAuto.id = "autobuild-checkbox"; cbAuto.className = "diep-checkbox";
+    cbAuto.checked = false;
+    autoRow.appendChild(labelAuto); autoRow.appendChild(cbAuto); appendRowWithStop(secBuilds, autoRow);
+
+    const info = document.createElement("div"); info.className = "diep-small"; info.innerText = "Auto-Apply will attempt to set your build repeatedly while enabled.";
+    info.addEventListener("mousedown", (e) => e.stopPropagation());
+    secBuilds.appendChild(info);
+
+    // Implementation helpers (local)
+    let autobuildInterval = null;
+    function tryExecuteBuildCommand(buildString) {
+      try { if (window.input && typeof window.input.execute === "function") { window.input.execute('game_stats_build ' + buildString); return true; } } catch(e){}
+      try { if (window.extern && typeof window.extern.execute === "function") { window.extern.execute('game_stats_build ' + buildString); return true; } } catch(e){}
+      try { if (window.input && typeof window.input.set_convar === "function") { window.input.set_convar("game_stats_build", buildString); return true; } } catch(e){}
+      return false;
+    }
+    function applySelectedBuildNow() {
+      const build = document.getElementById("builds-select").value;
+      if (!build) return;
+      const ok = tryExecuteBuildCommand(build);
+      if (!ok && window.extern) { try { window.extern.inGameNotification("Failed to apply build (no executor found)", 0xFF5E5E); } catch(e){} }
+      else { try { window.extern.inGameNotification("Applied build", 0x2b7bb8); } catch(e){} }
+    }
+    function startAutoBuild() {
+      if (autobuildInterval) return;
+      autobuildInterval = setInterval(() => { const build = document.getElementById("builds-select").value; if (!build) return; tryExecuteBuildCommand(build); }, 2500);
+    }
+    function stopAutoBuild() { if (!autobuildInterval) return; clearInterval(autobuildInterval); autobuildInterval = null; }
+
+    cbAuto.addEventListener("change", function (e) { e.stopPropagation(); if (this.checked) startAutoBuild(); else stopAutoBuild(); });
+  }
+
+  // Info
+  const secInfo = makeSection("info");
+  {
+    const infoText = document.createElement("div"); infoText.className = "diep-small";
+    infoText.style.whiteSpace = "normal";
+    infoText.style.lineHeight = "1.3";
+    infoText.innerHTML = "<strong>Swan RC</strong><br>Diep-styled control panel. Keys: U = aimbot, I = stack, M = toggle menu.";
+    infoText.addEventListener("mousedown", (e) => e.stopPropagation());
+    secInfo.appendChild(infoText);
+  }
+
+  // footer
+  const footer = document.createElement("div"); footer.className = "diep-footer";
+  footer.className = "diep-footer";
+  footer.textContent = "Swan RC — styled";
+
+  menuContainer.appendChild(header);
+  menuContainer.appendChild(body);
+  menuContainer.appendChild(footer);
+  document.body.appendChild(menuContainer);
+
+  // start hidden
+  menuContainer.style.display = "none";
+
+  // tab switcher
+  function switchTab(id) {
+    Object.keys(sections).forEach(k => {
+      const sec = sections[k];
+      if (k === id) sec.classList.add("active"); else sec.classList.remove("active");
+    });
+    Object.keys(tabButtons).forEach(k => {
+      const btn = tabButtons[k];
+      if (k === id) btn.classList.add("active"); else btn.classList.remove("active");
+    });
+  }
+
+  // Make window draggable by header
+  (function makeDraggable(target, handle) {
+    let dragging = false, offsetX = 0, offsetY = 0;
+    handle.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+      dragging = true;
+      const rect = target.getBoundingClientRect();
+      offsetX = e.clientX - rect.left;
+      offsetY = e.clientY - rect.top;
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+      e.preventDefault();
+    });
+    function onMove(e) {
+      if (!dragging) return;
+      target.style.left = (e.clientX - offsetX) + "px";
+      target.style.top = (e.clientY - offsetY) + "px";
+    }
+    function onUp() {
+      dragging = false;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    }
+  })(menuContainer, header);
+
+  // Ensure initial state of inputs if script variables changed elsewhere after menu creation
+  try {
+    document.getElementById("spinner-checkbox").checked = Boolean(isSpinning);
+    document.getElementById("spin-slider").value = spinSpeed;
+    document.getElementById("aimbot-checkbox").checked = Boolean(isAimbotActive);
+    document.getElementById("convar-bullet-checkbox").checked = Boolean(useConvarBulletSpeed);
+    document.getElementById("drone-aimonly-checkbox").checked = Boolean(useDroneAimOnlyForMinions);
+    document.getElementById("autofarm-checkbox").checked = Boolean(isAutoFarm);
+    document.getElementById("autofarm-hold-checkbox").checked = Boolean(autofarmOnRightHold);
+    document.getElementById("show-bullet-speed-checkbox").checked = Boolean(showBulletSpeeds);
+    document.getElementById("debug-checkbox").checked = Boolean(isDebug);
+    document.getElementById("blackbg-checkbox").checked = Boolean(isBlackBg);
+  } catch (e) {}
+}
