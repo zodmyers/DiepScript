@@ -641,7 +641,7 @@ DiepScript.define("ui/menu", (require) => {
       infoText.style.whiteSpace = "normal";
       infoText.style.lineHeight = "1.3";
       infoText.innerHTML =
-        "<strong>Swan RC</strong><br>Diep-styled control panel. Keys: U = aimbot, I = stack, M = toggle menu.";
+        "<strong>Fwan RC</strong><br>Diep-styled control panel. Keys: U = aimbot, I = stack, M = toggle menu.";
       infoText.addEventListener("mousedown", (e) => e.stopPropagation());
       secInfo.appendChild(infoText);
     }
