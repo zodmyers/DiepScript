@@ -1,4 +1,5 @@
 DiepScript.define("ui/menu", (require) => {
+  console.log("This freaking sucks dude");
   // Replaces the original Diep-style control panel with the new visual design
   // while preserving all original element IDs and functionality.
   const state = require("core/state");
