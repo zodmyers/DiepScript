@@ -15,9 +15,11 @@ All modules register themselves through the lightweight loader in `src/core/modu
 
 ## Tampermonkey Setup
 
-1. Publish the repository (or the `src/` directory) to a branch that Tampermonkey can reach.
-2. Open `tampermonkey/TamperScript.user.js` and replace `YOUR_USERNAME` with your GitHub username (or any other host you choose).
+1. Publish the repository (or at least the `src/` directory) to a branch that Tampermonkey can reach.
+2. `tampermonkey/TamperScript.user.js` already points at `https://raw.githubusercontent.com/zodmyers/DiepScript/main/...`. Update the branch/commit portion if you want to pin to a specific revision.
 3. Install the script in Tampermonkey. The loader will pull every module and call `DiepScript.require("index")` to start the menu.
+
+> GitHub only serves `raw.githubusercontent.com` for **public** repositories. If you keep this project private, host the files elsewhere (e.g., GitHub Pages, a CDN, or a local web server) and update the `@require` URLs accordingly.
 
 > Tip: keep the module URLs pointing at a fixed branch/tag for stability when testing with others.
 
