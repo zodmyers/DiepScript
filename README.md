@@ -15,11 +15,21 @@ All modules register themselves through the lightweight loader in `src/core/modu
 
 ## Tampermonkey Setup
 
-1. Publish the repository (or at least the `src/` directory) to a branch that Tampermonkey can reach.
-2. `tampermonkey/TamperScript.user.js` already points at `https://raw.githubusercontent.com/zodmyers/DiepScript/main/...`. Update the branch/commit portion if you want to pin to a specific revision.
-3. Install the script in Tampermonkey. The loader will pull every module and call `DiepScript.require("index")` to start the menu.
+1. Publish the repository (or at least the `dist/` folder) to a branch that Tampermonkey can reach.
+2. `tampermonkey/TamperScript.user.js` now pulls the single bundle at `https://raw.githubusercontent.com/zodmyers/DiepScript/main/dist/diepScript.bundle.js`. Change `main` to another branch/commit if you want to pin a release.
+3. Install/update the script in Tampermonkey. The loader will fetch the bundle and bootstrap `DiepScript.require("index")`.
 
-> GitHub only serves `raw.githubusercontent.com` for **public** repositories. If you keep this project private, host the files elsewhere (e.g., GitHub Pages, a CDN, or a local web server) and update the `@require` URLs accordingly.
+> GitHub only serves `raw.githubusercontent.com` for **public** repositories. If you keep things private, host `dist/diepScript.bundle.js` somewhere accessible (GitHub Pages, CDN, personal server) and update the `@require` URL.
+
+### Rebuilding the bundle
+
+Whenever you touch files in `src/`, regenerate the bundle:
+
+```powershell
+pwsh -File scripts/build-bundle.ps1
+```
+
+This overwrites `dist/diepScript.bundle.js` with the latest module code. Commit both the source changes and the refreshed bundle so Tampermonkey stays in sync.
 
 > Tip: keep the module URLs pointing at a fixed branch/tag for stability when testing with others.
 
