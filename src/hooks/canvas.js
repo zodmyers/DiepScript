@@ -1,10 +1,12 @@
 DiepScript.define("hooks/canvas", (require) => {
+  // Hooks the game's canvas so we can observe draw calls without touching game code.
   const state = require("core/state");
   const math = require("core/math");
   const coordinates = require("core/coordinates");
   const menu = require("ui/menu");
 
   class CanvasInterceptor {
+    // Wraps every 2D context method we care about and lets modules register listeners.
     constructor() {
       this.hooks = {};
       this.initialised = false;
@@ -88,6 +90,7 @@ DiepScript.define("hooks/canvas", (require) => {
 
   const interceptor = new CanvasInterceptor();
 
+  // Public helper so other modules can attach to canvas methods.
   function registerContextHook(methodName, hookFn) {
     interceptor.register(methodName, hookFn);
   }
@@ -139,6 +142,7 @@ DiepScript.define("hooks/canvas", (require) => {
   });
 
   registerContextHook("arc", (context, ...args) => {
+    // `arc` runs for both tanks and bullets; radius + transform decide what we capture.
     const transform = state.ctxTransform || [0, 0, 0, 0, 0, 0];
     if (
       context.canvas.id === "canvas" &&
@@ -217,6 +221,7 @@ DiepScript.define("hooks/canvas", (require) => {
   });
 
   registerContextHook("fill", (context, ...args) => {
+    // capture minimap arrow + neutral shapes to feed autofarm targeting.
     const transform = state.ctxTransform || [0, 0, 0, 0, 0, 0];
     const average = math.getAverage(state.pathVertices);
 

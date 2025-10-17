@@ -1,4 +1,5 @@
 DiepScript.define("features/fov", (require) => {
+  // Zoom controller that mimics the original script’s mouse wheel and +/- behaviour.
   const state = require("core/state");
   const constants = require("core/constants");
 

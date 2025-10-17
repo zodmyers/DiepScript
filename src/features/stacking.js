@@ -1,4 +1,5 @@
 DiepScript.define("features/stacking", (require) => {
+  // Implements the timed key presses required for Hunter / Predator bullet stacking.
   const state = require("core/state");
   const constants = require("core/constants");
   const stats = require("core/stats");

@@ -1,4 +1,5 @@
 DiepScript.define("core/math", () => {
+  // Math helpers kept pure so they can be unit-tested or reused in other surfaces.
   function getDistance(x1, y1, x2, y2) {
     return Math.hypot(x1 - x2, y1 - y2);
   }
@@ -74,6 +75,7 @@ DiepScript.define("core/math", () => {
     return t * t * (3 - 2 * t);
   }
 
+  // Smoothly merges “fire straight” with interception math so aim feels stable.
   function blendPredictiveAim(
     shooter,
     target,

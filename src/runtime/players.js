@@ -1,4 +1,5 @@
 DiepScript.define("runtime/players", (require) => {
+  // Converts raw render information into persistent player objects with velocity/mode context.
   const state = require("core/state");
   const constants = require("core/constants");
   const math = require("core/math");
@@ -28,6 +29,7 @@ DiepScript.define("runtime/players", (require) => {
     }, null);
   }
 
+  // Rebuild player list each frame by pairing canvas text blobs with tank shapes.
   function updatePlayersFromRender() {
     state.lastPlayers = state.players;
     state.players = [];
@@ -107,6 +109,7 @@ DiepScript.define("runtime/players", (require) => {
     return samples > 0 ? [sumX / samples, sumY / samples] : [0, 0];
   }
 
+  // Attempt to match the freshly parsed players to the previous frame to preserve velocity history.
   function matchPlayers() {
     const now = performance.now();
     const maxHistory = constants.playerVelocityPredictionSampleSize;
@@ -154,6 +157,7 @@ DiepScript.define("runtime/players", (require) => {
     }
   }
 
+  // Heuristic for deciding which enemy to prioritise (distance + score).
   function getPlayerWeight(player) {
     const distanceWeight =
       (1 /

@@ -1,4 +1,5 @@
 DiepScript.define("core/state", (require) => {
+  // Shared mutable state for every module. Treat this as the single source of truth.
   const constants = require("core/constants");
 
   const state = {

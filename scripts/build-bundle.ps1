@@ -3,7 +3,11 @@
 
 $ErrorActionPreference = "Stop"
 
-$projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+if (-not $scriptDir) {
+    throw "Failed to determine script directory."
+}
+$projectRoot = Split-Path -Parent $scriptDir
 if (-not $projectRoot) {
     throw "Failed to determine project root."
 }

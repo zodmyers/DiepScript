@@ -1,4 +1,5 @@
 /* eslint-disable no-multi-assign */
+// Lightweight AMD-style loader so every module can be `@require`'d individually or bundled later.
 (function bootstrapModuleLoader(globalScope) {
   if (globalScope.DiepScript && globalScope.DiepScript.require) {
     return;

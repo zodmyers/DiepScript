@@ -1,7 +1,9 @@
 DiepScript.define("runtime/lifecycle", (require) => {
+  // Waits for extern to appear, proxies methods we rely on, then boots the main loop.
   const state = require("core/state");
   const gameLoop = require("runtime/gameLoop");
 
+  // Wrap extern methods so we can observe inputs without blocking the game.
   function proxyExternMethods() {
     if (!window.extern) return;
 

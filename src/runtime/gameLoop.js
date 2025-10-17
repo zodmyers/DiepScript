@@ -1,4 +1,5 @@
 DiepScript.define("runtime/gameLoop", (require) => {
+  // Main heartbeat that keeps prediction, targeting, and UI in sync with the game render.
   const state = require("core/state");
   const constants = require("core/constants");
   const stats = require("core/stats");
@@ -10,6 +11,7 @@ DiepScript.define("runtime/gameLoop", (require) => {
 
   let rafId = null;
 
+  // Track our own movement to compensate for drift when leading targets.
   function updateShooterVelocity() {
     const history = state.playerPositionTable;
     const limit = constants.playerVelocityPredictionSampleSize;

@@ -1,4 +1,5 @@
 DiepScript.define("features/spinner", (require) => {
+  // Emits circular cursor motion when the spinner toggle is active.
   const state = require("core/state");
 
   function tickSpinner() {

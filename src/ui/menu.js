@@ -1,4 +1,5 @@
 DiepScript.define("ui/menu", (require) => {
+  // Recreates the Diep-style control panel so players can toggle features live.
   const state = require("core/state");
   const autofarm = require("features/autofarm");
 
@@ -8,6 +9,7 @@ DiepScript.define("ui/menu", (require) => {
       return;
     }
 
+    // One-off stylesheet keeps the menu self-contained and avoids leaking to the page.
     const style = document.createElement("style");
     style.textContent = `
     :root{
@@ -178,7 +180,7 @@ DiepScript.define("ui/menu", (require) => {
 
     const title = document.createElement("div");
     title.className = "diep-title";
-    title.innerText = "Menu v2 – Swan RC";
+    title.innerText = "Swan RC";
     header.appendChild(title);
 
     const closeBtn = document.createElement("div");
@@ -196,6 +198,7 @@ DiepScript.define("ui/menu", (require) => {
 
     const tabsWrap = document.createElement("div");
     tabsWrap.className = "diep-tabs";
+    // Tab metadata drives both the buttons and individual sections.
     const tabs = [
       { id: "spin", label: "Spin" },
       { id: "aim", label: "Aim" },
@@ -220,7 +223,7 @@ DiepScript.define("ui/menu", (require) => {
     body.appendChild(tabsWrap);
 
     const sections = {};
-    function makeSection(id) {
+  function makeSection(id) {
       const sec = document.createElement("div");
       sec.className = "diep-section" + (id === "spin" ? " active" : "");
       sec.id = `diep-section-${id}`;
@@ -229,7 +232,7 @@ DiepScript.define("ui/menu", (require) => {
       return sec;
     }
 
-    function appendRowWithStop(sec, row) {
+  function appendRowWithStop(sec, row) {
       row.addEventListener("mousedown", (e) => e.stopPropagation());
       row.addEventListener("click", (e) => e.stopPropagation());
       sec.appendChild(row);
@@ -539,6 +542,7 @@ DiepScript.define("ui/menu", (require) => {
 
     const secBuilds = makeSection("builds");
     {
+      // Predefined upgrade strings – mirrors the original script’s build list.
       const presets = [
         { name: "rocketeer", build: "565656565656567878787878787822333" },
         { name: "skimmer", build: "565656565656484848484848487777777" },
@@ -685,7 +689,7 @@ DiepScript.define("ui/menu", (require) => {
 
     const footer = document.createElement("div");
     footer.className = "diep-footer";
-    footer.textContent = "Swan RC – styled";
+    footer.textContent = "Swan RC";
 
     container.appendChild(header);
     container.appendChild(body);

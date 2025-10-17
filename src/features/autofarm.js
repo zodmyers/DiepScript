@@ -1,4 +1,5 @@
 DiepScript.define("features/autofarm", (require) => {
+  // Handles passive farming behaviour by nudging the cursor toward shapes and clicking.
   const state = require("core/state");
   const constants = require("core/constants");
   const coordinates = require("core/coordinates");
@@ -24,6 +25,7 @@ DiepScript.define("features/autofarm", (require) => {
     }
   }
 
+  // Visual aid for debug sessions so we can see which shapes were detected.
   function drawDebugTargets() {
     if (!state.isDebug) return;
     const canvas = document.getElementById("canvas");
@@ -61,6 +63,7 @@ DiepScript.define("features/autofarm", (require) => {
     ctx.restore();
   }
 
+  // Priority selector – falls back to other shape types if the preferred one is missing.
   function chooseFarmTarget() {
     let target = null;
 
@@ -97,6 +100,7 @@ DiepScript.define("features/autofarm", (require) => {
     return target;
   }
 
+  // Single tick of autofarm; returns true if we acted on a shape this frame.
   function autofarmTick() {
     if (!window.extern || !window.extern.doesHaveTank()) {
       return false;

@@ -1,4 +1,5 @@
 DiepScript.define("core/stats", (require) => {
+  // Helper routines for reading/deriving player stat info through extern APIs.
   const constants = require("core/constants");
   const state = require("core/state");
 

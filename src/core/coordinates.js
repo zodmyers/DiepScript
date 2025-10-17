@@ -1,4 +1,5 @@
 DiepScript.define("core/coordinates", (require) => {
+  // Responsible for translating between minimap/canvas coordinates and world space.
   const state = require("core/state");
   const constants = require("core/constants");
 

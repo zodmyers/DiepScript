@@ -1,4 +1,5 @@
 DiepScript.define("hooks/input", (require) => {
+  // Normalises DOM input events into state flags so features can stay declarative.
   const state = require("core/state");
   const constants = require("core/constants");
   const aimbot = require("features/aimbot");
@@ -94,6 +95,7 @@ DiepScript.define("hooks/input", (require) => {
     }
   }
 
+  // Keyboard shortcuts mirror the original script (toggle aimbot/stack/menu).
   function handleGlobalKeydown(ev) {
     if (ev.code === constants.KeyBindings.toggleAimbot) {
       state.isAimbotActive = !state.isAimbotActive;

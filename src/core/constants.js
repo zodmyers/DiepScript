@@ -1,4 +1,5 @@
 DiepScript.define("core/constants", () => {
+  // Collection of magic numbers and lookup tables that power prediction, UI, and keybindings.
   const gameStyleDefaults = {
     ren_grid_base_alpha: 0.05,
     square: "#ffe869",
@@ -10,6 +11,7 @@ DiepScript.define("core/constants", () => {
     teamGreen: "#00e16e",
   };
 
+  // Tank-specific bullet offsets used when computing intercept trajectories.
   const bulletSpeedOffsets = {
     Skimmer: 0.5,
     Factory: 0.56,
@@ -33,6 +35,7 @@ DiepScript.define("core/constants", () => {
     Destroyer: 0.7,
   };
 
+  // Timings (in ms) for charge/stack combos; indexed by reload stat level.
   const predatorStackTime = [
     [50, 500, 1400, 2800],
     [50, 500, 1300, 2700],

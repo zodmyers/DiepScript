@@ -1,10 +1,11 @@
 /*
  * DiepScript bundle (auto-generated)
- * Do not edit manually; regenerate via scripts/build-bundle.ps1 or update instructions.
+ * Do not edit manually; regenerate via scripts/build-bundle.ps1.
  */
 
 // ---- Begin src/core/moduleLoader.js
 /* eslint-disable no-multi-assign */
+// Lightweight AMD-style loader so every module can be `@require`'d individually or bundled later.
 (function bootstrapModuleLoader(globalScope) {
   if (globalScope.DiepScript && globalScope.DiepScript.require) {
     return;
@@ -52,6 +53,7 @@
 
 // ---- Begin src/core/constants.js
 DiepScript.define("core/constants", () => {
+  // Collection of magic numbers and lookup tables that power prediction, UI, and keybindings.
   const gameStyleDefaults = {
     ren_grid_base_alpha: 0.05,
     square: "#ffe869",
@@ -63,6 +65,7 @@ DiepScript.define("core/constants", () => {
     teamGreen: "#00e16e",
   };
 
+  // Tank-specific bullet offsets used when computing intercept trajectories.
   const bulletSpeedOffsets = {
     Skimmer: 0.5,
     Factory: 0.56,
@@ -86,6 +89,7 @@ DiepScript.define("core/constants", () => {
     Destroyer: 0.7,
   };
 
+  // Timings (in ms) for charge/stack combos; indexed by reload stat level.
   const predatorStackTime = [
     [50, 500, 1400, 2800],
     [50, 500, 1300, 2700],
@@ -155,6 +159,7 @@ DiepScript.define("core/constants", () => {
 
 // ---- Begin src/core/state.js
 DiepScript.define("core/state", (require) => {
+  // Shared mutable state for every module. Treat this as the single source of truth.
   const constants = require("core/constants");
 
   const state = {
@@ -246,6 +251,7 @@ DiepScript.define("core/state", (require) => {
 
 // ---- Begin src/core/math.js
 DiepScript.define("core/math", () => {
+  // Math helpers kept pure so they can be unit-tested or reused in other surfaces.
   function getDistance(x1, y1, x2, y2) {
     return Math.hypot(x1 - x2, y1 - y2);
   }
@@ -321,6 +327,7 @@ DiepScript.define("core/math", () => {
     return t * t * (3 - 2 * t);
   }
 
+  // Smoothly merges “fire straight” with interception math so aim feels stable.
   function blendPredictiveAim(
     shooter,
     target,
@@ -467,6 +474,7 @@ DiepScript.define("core/math", () => {
 
 // ---- Begin src/core/stats.js
 DiepScript.define("core/stats", (require) => {
+  // Helper routines for reading/deriving player stat info through extern APIs.
   const constants = require("core/constants");
   const state = require("core/state");
 
@@ -618,6 +626,7 @@ DiepScript.define("core/stats", (require) => {
 
 // ---- Begin src/core/coordinates.js
 DiepScript.define("core/coordinates", (require) => {
+  // Responsible for translating between minimap/canvas coordinates and world space.
   const state = require("core/state");
   const constants = require("core/constants");
 
@@ -676,6 +685,7 @@ DiepScript.define("core/coordinates", (require) => {
 
 // ---- Begin src/runtime/players.js
 DiepScript.define("runtime/players", (require) => {
+  // Converts raw render information into persistent player objects with velocity/mode context.
   const state = require("core/state");
   const constants = require("core/constants");
   const math = require("core/math");
@@ -705,6 +715,7 @@ DiepScript.define("runtime/players", (require) => {
     }, null);
   }
 
+  // Rebuild player list each frame by pairing canvas text blobs with tank shapes.
   function updatePlayersFromRender() {
     state.lastPlayers = state.players;
     state.players = [];
@@ -784,6 +795,7 @@ DiepScript.define("runtime/players", (require) => {
     return samples > 0 ? [sumX / samples, sumY / samples] : [0, 0];
   }
 
+  // Attempt to match the freshly parsed players to the previous frame to preserve velocity history.
   function matchPlayers() {
     const now = performance.now();
     const maxHistory = constants.playerVelocityPredictionSampleSize;
@@ -831,6 +843,7 @@ DiepScript.define("runtime/players", (require) => {
     }
   }
 
+  // Heuristic for deciding which enemy to prioritise (distance + score).
   function getPlayerWeight(player) {
     const distanceWeight =
       (1 /
@@ -952,6 +965,7 @@ DiepScript.define("runtime/players", (require) => {
 
 // ---- Begin src/features/visuals.js
 DiepScript.define("features/visuals", (require) => {
+  // Debug drawing helpers rendered directly on the main canvas.
   const state = require("core/state");
   const coordinates = require("core/coordinates");
 
@@ -1026,6 +1040,7 @@ DiepScript.define("features/visuals", (require) => {
 
 // ---- Begin src/features/aimbot.js
 DiepScript.define("features/aimbot", (require) => {
+  // Central aiming brain: picks targets, computes intercepts, and issues input events.
   const state = require("core/state");
   const constants = require("core/constants");
   const math = require("core/math");
@@ -1034,6 +1049,7 @@ DiepScript.define("features/aimbot", (require) => {
   const visuals = require("features/visuals");
   const playersRuntime = require("runtime/players");
 
+  // When drone aim-only is active we constantly release fire to keep drones responsive.
   function ensureDroneAimOnlyState() {
     try {
       if (window.extern && typeof window.extern.onKeyUp === "function") {
@@ -1045,6 +1061,7 @@ DiepScript.define("features/aimbot", (require) => {
     state.isFiring = false;
   }
 
+  // Estimate how quickly the enemy moves toward/away from us to decide dodge potential.
   function getRadialVelocity(player) {
     const history = player.positionTable || [];
     let deltaDistance = 0;
@@ -1143,6 +1160,7 @@ DiepScript.define("features/aimbot", (require) => {
     }
   }
 
+  // Claim control of the in-game cursor so subsequent aim updates stick.
   function lockMouse() {
     if (state.mouseLocked) return;
     state.mouseLocked = true;
@@ -1165,6 +1183,7 @@ DiepScript.define("features/aimbot", (require) => {
     }, 80);
   }
 
+  // Release mouse control and key presses once the trigger condition clears.
   function unlockMouse() {
     if (!state.mouseLocked) return;
     state.mouseLocked = false;
@@ -1298,6 +1317,7 @@ DiepScript.define("features/aimbot", (require) => {
 
 // ---- Begin src/features/autofarm.js
 DiepScript.define("features/autofarm", (require) => {
+  // Handles passive farming behaviour by nudging the cursor toward shapes and clicking.
   const state = require("core/state");
   const constants = require("core/constants");
   const coordinates = require("core/coordinates");
@@ -1323,6 +1343,7 @@ DiepScript.define("features/autofarm", (require) => {
     }
   }
 
+  // Visual aid for debug sessions so we can see which shapes were detected.
   function drawDebugTargets() {
     if (!state.isDebug) return;
     const canvas = document.getElementById("canvas");
@@ -1360,6 +1381,7 @@ DiepScript.define("features/autofarm", (require) => {
     ctx.restore();
   }
 
+  // Priority selector – falls back to other shape types if the preferred one is missing.
   function chooseFarmTarget() {
     let target = null;
 
@@ -1396,6 +1418,7 @@ DiepScript.define("features/autofarm", (require) => {
     return target;
   }
 
+  // Single tick of autofarm; returns true if we acted on a shape this frame.
   function autofarmTick() {
     if (!window.extern || !window.extern.doesHaveTank()) {
       return false;
@@ -1459,6 +1482,7 @@ DiepScript.define("features/autofarm", (require) => {
 
 // ---- Begin src/features/spinner.js
 DiepScript.define("features/spinner", (require) => {
+  // Emits circular cursor motion when the spinner toggle is active.
   const state = require("core/state");
 
   function tickSpinner() {
@@ -1498,6 +1522,7 @@ DiepScript.define("features/spinner", (require) => {
 
 // ---- Begin src/features/fov.js
 DiepScript.define("features/fov", (require) => {
+  // Zoom controller that mimics the original script’s mouse wheel and +/- behaviour.
   const state = require("core/state");
   const constants = require("core/constants");
 
@@ -1568,6 +1593,7 @@ DiepScript.define("features/fov", (require) => {
 
 // ---- Begin src/features/stacking.js
 DiepScript.define("features/stacking", (require) => {
+  // Implements the timed key presses required for Hunter / Predator bullet stacking.
   const state = require("core/state");
   const constants = require("core/constants");
   const stats = require("core/stats");
@@ -1639,12 +1665,14 @@ DiepScript.define("features/stacking", (require) => {
 
 // ---- Begin src/hooks/canvas.js
 DiepScript.define("hooks/canvas", (require) => {
+  // Hooks the game's canvas so we can observe draw calls without touching game code.
   const state = require("core/state");
   const math = require("core/math");
   const coordinates = require("core/coordinates");
   const menu = require("ui/menu");
 
   class CanvasInterceptor {
+    // Wraps every 2D context method we care about and lets modules register listeners.
     constructor() {
       this.hooks = {};
       this.initialised = false;
@@ -1728,6 +1756,7 @@ DiepScript.define("hooks/canvas", (require) => {
 
   const interceptor = new CanvasInterceptor();
 
+  // Public helper so other modules can attach to canvas methods.
   function registerContextHook(methodName, hookFn) {
     interceptor.register(methodName, hookFn);
   }
@@ -1779,6 +1808,7 @@ DiepScript.define("hooks/canvas", (require) => {
   });
 
   registerContextHook("arc", (context, ...args) => {
+    // `arc` runs for both tanks and bullets; radius + transform decide what we capture.
     const transform = state.ctxTransform || [0, 0, 0, 0, 0, 0];
     if (
       context.canvas.id === "canvas" &&
@@ -1857,6 +1887,7 @@ DiepScript.define("hooks/canvas", (require) => {
   });
 
   registerContextHook("fill", (context, ...args) => {
+    // capture minimap arrow + neutral shapes to feed autofarm targeting.
     const transform = state.ctxTransform || [0, 0, 0, 0, 0, 0];
     const average = math.getAverage(state.pathVertices);
 
@@ -1907,6 +1938,7 @@ DiepScript.define("hooks/canvas", (require) => {
 
 // ---- Begin src/hooks/input.js
 DiepScript.define("hooks/input", (require) => {
+  // Normalises DOM input events into state flags so features can stay declarative.
   const state = require("core/state");
   const constants = require("core/constants");
   const aimbot = require("features/aimbot");
@@ -2002,6 +2034,7 @@ DiepScript.define("hooks/input", (require) => {
     }
   }
 
+  // Keyboard shortcuts mirror the original script (toggle aimbot/stack/menu).
   function handleGlobalKeydown(ev) {
     if (ev.code === constants.KeyBindings.toggleAimbot) {
       state.isAimbotActive = !state.isAimbotActive;
@@ -2081,6 +2114,7 @@ DiepScript.define("hooks/input", (require) => {
 
 // ---- Begin src/ui/menu.js
 DiepScript.define("ui/menu", (require) => {
+  // Recreates the Diep-style control panel so players can toggle features live.
   const state = require("core/state");
   const autofarm = require("features/autofarm");
 
@@ -2090,6 +2124,7 @@ DiepScript.define("ui/menu", (require) => {
       return;
     }
 
+    // One-off stylesheet keeps the menu self-contained and avoids leaking to the page.
     const style = document.createElement("style");
     style.textContent = `
     :root{
@@ -2260,7 +2295,7 @@ DiepScript.define("ui/menu", (require) => {
 
     const title = document.createElement("div");
     title.className = "diep-title";
-    title.innerText = "Menu v2 – Swan RC";
+    title.innerText = "Swan RC";
     header.appendChild(title);
 
     const closeBtn = document.createElement("div");
@@ -2278,6 +2313,7 @@ DiepScript.define("ui/menu", (require) => {
 
     const tabsWrap = document.createElement("div");
     tabsWrap.className = "diep-tabs";
+    // Tab metadata drives both the buttons and individual sections.
     const tabs = [
       { id: "spin", label: "Spin" },
       { id: "aim", label: "Aim" },
@@ -2302,7 +2338,7 @@ DiepScript.define("ui/menu", (require) => {
     body.appendChild(tabsWrap);
 
     const sections = {};
-    function makeSection(id) {
+  function makeSection(id) {
       const sec = document.createElement("div");
       sec.className = "diep-section" + (id === "spin" ? " active" : "");
       sec.id = `diep-section-${id}`;
@@ -2311,7 +2347,7 @@ DiepScript.define("ui/menu", (require) => {
       return sec;
     }
 
-    function appendRowWithStop(sec, row) {
+  function appendRowWithStop(sec, row) {
       row.addEventListener("mousedown", (e) => e.stopPropagation());
       row.addEventListener("click", (e) => e.stopPropagation());
       sec.appendChild(row);
@@ -2621,6 +2657,7 @@ DiepScript.define("ui/menu", (require) => {
 
     const secBuilds = makeSection("builds");
     {
+      // Predefined upgrade strings – mirrors the original script’s build list.
       const presets = [
         { name: "rocketeer", build: "565656565656567878787878787822333" },
         { name: "skimmer", build: "565656565656484848484848487777777" },
@@ -2767,7 +2804,7 @@ DiepScript.define("ui/menu", (require) => {
 
     const footer = document.createElement("div");
     footer.className = "diep-footer";
-    footer.textContent = "Swan RC – styled";
+    footer.textContent = "Swan RC";
 
     container.appendChild(header);
     container.appendChild(body);
@@ -2843,6 +2880,7 @@ DiepScript.define("ui/menu", (require) => {
 
 // ---- Begin src/runtime/gameLoop.js
 DiepScript.define("runtime/gameLoop", (require) => {
+  // Main heartbeat that keeps prediction, targeting, and UI in sync with the game render.
   const state = require("core/state");
   const constants = require("core/constants");
   const stats = require("core/stats");
@@ -2854,6 +2892,7 @@ DiepScript.define("runtime/gameLoop", (require) => {
 
   let rafId = null;
 
+  // Track our own movement to compensate for drift when leading targets.
   function updateShooterVelocity() {
     const history = state.playerPositionTable;
     const limit = constants.playerVelocityPredictionSampleSize;
@@ -2992,9 +3031,11 @@ DiepScript.define("runtime/gameLoop", (require) => {
 
 // ---- Begin src/runtime/lifecycle.js
 DiepScript.define("runtime/lifecycle", (require) => {
+  // Waits for extern to appear, proxies methods we rely on, then boots the main loop.
   const state = require("core/state");
   const gameLoop = require("runtime/gameLoop");
 
+  // Wrap extern methods so we can observe inputs without blocking the game.
   function proxyExternMethods() {
     if (!window.extern) return;
 
@@ -3109,6 +3150,7 @@ DiepScript.define("runtime/lifecycle", (require) => {
 
 // ---- Begin src/main.js
 DiepScript.define("main", (require) => {
+  // Entry point – wires the feature modules together.
   const fov = require("features/fov");
   const input = require("hooks/input");
   require("hooks/canvas");
@@ -3128,6 +3170,7 @@ DiepScript.define("main", (require) => {
 
 // ---- Begin src/index.js
 DiepScript.define("index", (require) => {
+  // Minimal bootstrap invoked once the bundle/loader is in place.
   const main = require("main");
   main.init();
 });

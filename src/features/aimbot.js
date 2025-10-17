@@ -1,4 +1,5 @@
 DiepScript.define("features/aimbot", (require) => {
+  // Central aiming brain: picks targets, computes intercepts, and issues input events.
   const state = require("core/state");
   const constants = require("core/constants");
   const math = require("core/math");
@@ -7,6 +8,7 @@ DiepScript.define("features/aimbot", (require) => {
   const visuals = require("features/visuals");
   const playersRuntime = require("runtime/players");
 
+  // When drone aim-only is active we constantly release fire to keep drones responsive.
   function ensureDroneAimOnlyState() {
     try {
       if (window.extern && typeof window.extern.onKeyUp === "function") {
@@ -18,6 +20,7 @@ DiepScript.define("features/aimbot", (require) => {
     state.isFiring = false;
   }
 
+  // Estimate how quickly the enemy moves toward/away from us to decide dodge potential.
   function getRadialVelocity(player) {
     const history = player.positionTable || [];
     let deltaDistance = 0;
@@ -116,6 +119,7 @@ DiepScript.define("features/aimbot", (require) => {
     }
   }
 
+  // Claim control of the in-game cursor so subsequent aim updates stick.
   function lockMouse() {
     if (state.mouseLocked) return;
     state.mouseLocked = true;
@@ -138,6 +142,7 @@ DiepScript.define("features/aimbot", (require) => {
     }, 80);
   }
 
+  // Release mouse control and key presses once the trigger condition clears.
   function unlockMouse() {
     if (!state.mouseLocked) return;
     state.mouseLocked = false;

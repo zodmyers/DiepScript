@@ -1,4 +1,5 @@
 DiepScript.define("features/visuals", (require) => {
+  // Debug drawing helpers rendered directly on the main canvas.
   const state = require("core/state");
   const coordinates = require("core/coordinates");
 

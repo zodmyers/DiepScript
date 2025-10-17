@@ -1,4 +1,5 @@
 DiepScript.define("main", (require) => {
+  // Entry point – wires the feature modules together.
   const fov = require("features/fov");
   const input = require("hooks/input");
   require("hooks/canvas");
