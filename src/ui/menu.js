@@ -1,29 +1,33 @@
 DiepScript.define("ui/menu", (require) => {
-  // Replaces the original Diep-style control panel with the new visual design
-  // while preserving all original element IDs and functionality.
+  // Modularized unified menu for DiepScript
   const state = require("core/state");
   const autofarm = require("features/autofarm");
 
+  let welcomeActive = true;
+  let keyHandlerAdded = false;
+
   function ensureMenu() {
-    if (state.menuContainer && state.menuContainer.parentNode) {
-      // If the menu exists, toggle visibility by removing/adding .active
-      const el = state.menuContainer;
-      if (el.classList.contains("active")) {
-        el.classList.remove("active");
-        // let original hide behavior still possible
-        setTimeout(() => (el.style.display = "none"), 950);
-      } else {
-        el.style.display = "flex";
-        // allow layout, then animate open
-        requestAnimationFrame(() => el.classList.add("active"));
+    // If menu already exists, toggle visibility by removing/adding .active
+    try {
+      if (state.menuContainer && state.menuContainer.parentNode) {
+        const el = state.menuContainer;
+        if (el.classList.contains("active")) {
+          el.classList.remove("active");
+          setTimeout(() => (el.style.display = "none"), 950);
+        } else {
+          el.style.display = "flex";
+          requestAnimationFrame(() => el.classList.add("active"));
+        }
+        return;
       }
-      return;
+    } catch (e) {
+      // fallthrough to create
     }
 
-    // Inject the new CSS (derived from the provided menu design)
+    // Inject CSS
     const style = document.createElement("style");
     style.textContent = `
-/* Wrapper and animation from the provided design */
+/* Main container */
 .main-div {
   position: absolute;
   top: 50%;
@@ -33,183 +37,152 @@ DiepScript.define("ui/menu", (require) => {
   width: 0px;
   height: 0px;
   overflow: hidden;
-  background-color: rgba(19, 18, 18, 0.95);
+  background-color: rgba(19,18,18,0.95);
   font-family: "Kanit", sans-serif;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
-  color: rgb(212, 209, 209);
+  color: rgb(212,209,209);
   z-index: 1000000;
-  border-style: solid;
   border-radius: 5%;
   animation: close 0.95s ease-in-out forwards;
   box-shadow: 0 10px 30px rgba(0,0,0,0.6);
   user-select: none;
   gap: 8px;
   padding: 12px;
+  box-sizing: border-box;
+  padding-bottom: 18px;
 }
+.main-div, .main-div * { box-sizing: border-box; }
 
 .main-div.active {
   width: 400px;
   height: 450px;
   transform-origin: 200px 225px;
-  z-index: 1000000;
   animation: open 0.95s ease-in-out forwards;
 }
 
-/* header */
-.main-title {
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  gap:8px;
-}
-.main-title .bottom {
-  font-size: 1.25rem;
-  position: relative;
-}
-.main-title span {
-  font-size: 1rem;
-  display: block;
-  letter-spacing: 0.2rem;
-  transform: translate(-8px, 8px);
-}
+/* Title / drag handle */
+.main-title { display:flex; flex-direction:column; align-items:center; gap:8px; margin-bottom:4px; cursor: grab; }
+.main-title.grabbing { cursor: grabbing; }
+.main-title .bottom { font-size: 1.25rem; position: relative; }
+.main-title span { font-size: 1rem; display: block; letter-spacing: 0.2rem; transform: translate(-8px, 8px); }
 
-/* menu buttons (tabs) */
-.menu-row {
-  display:flex;
-  width:100%;
-  gap:8px;
-  justify-content:space-between;
-}
-.menu {
-  flex:1;
-  display:flex;
-  flex-direction:column;
-  align-items:stretch;
-}
+/* Tabs/buttons */
+.menu-row { display:flex; width:100%; gap:8px; justify-content:space-between; }
+.menu { flex:1; display:flex; flex-direction:column; align-items:stretch; }
 .menu button {
-  color: rgb(190, 184, 184);
-  display: block;
-  position: relative;
-  font-size: 1rem;
-  text-transform: uppercase;
-  background-color: transparent;
-  border: none;
-  cursor: pointer;
-  overflow: hidden;
-  width: 100%;
-  padding: 8px 10px;
-  margin-bottom: 6px;
+  color:#dbeeff;
   background: rgba(255,255,255,0.02);
   border: 1px solid rgba(255,255,255,0.03);
-  color: #dbeeff;
+  padding:8px 10px;
+  margin-bottom:6px;
   font-weight:600;
+  text-transform: uppercase;
+  cursor: pointer;
+  width:100%;
+  min-width:0;
+  overflow:hidden;
+  white-space:nowrap;
+  text-overflow:ellipsis;
 }
-.menu button:hover { transform: scale(1.02); color: #fff; }
-.menu button.active { background: linear-gradient(180deg, rgba(67,127,255,0.12), rgba(0,178,225,0.06)); color: #fff; border-color: rgba(67,127,255,0.18); }
+.menu button:hover { transform: scale(1.02); color:#fff; }
+.menu button.active { background: linear-gradient(180deg, rgba(67,127,255,0.12), rgba(0,178,225,0.06)); color:#fff; border-color: rgba(67,127,255,0.18); }
 
-/* sections */
-.section-wrap {
-  width: 100%;
-  display:block;
-  padding-top:8px;
-  overflow: auto;
-  flex:1;
-}
-.section {
-  display:none;
-}
+/* Sections */
+.section-wrap { width:100%; display:block; padding-top:8px; overflow-y:auto; overflow-x:hidden; flex:1; -webkit-overflow-scrolling: touch; }
+.section { display:none; }
 .section.active { display:block; }
 
-/* rows and labels (kept simple so existing ids and controls fit) */
-.row {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:8px;
-  padding:6px 0;
-  border-bottom:1px solid rgba(255,255,255,0.02);
-}
+/* Rows */
+.row { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.02); }
 .row:last-child { border-bottom:none; }
-.label { color:#dbeeff; font-weight:600; font-size:0.95rem; }
+.row > * { min-width:0; }
+.label { color:#dbeeff; font-weight:600; font-size:0.95rem; flex:0 1 45%; white-space:normal; word-break:break-word; }
 .small { font-size:0.8rem; color:#9fbfe6; margin-top:6px; line-height:1.2; }
 
-/* inputs */
-.diepcb { width:16px; height:16px; transform:scale(1.05); margin-left:6px; }
-.slider { width:160px; }
+/* Inputs */
+.diepcb { width:16px; height:16px; transform:scale(1.05); margin-left:6px; flex:0 0 auto; }
+.slider { width:160px; max-width:60%; }
+.diepb-select { width:100%; padding:6px; background:rgba(0,0,0,0.16); color:#e6f0fb; border:1px solid rgba(255,255,255,0.04); }
 
-/* footer */
-.footer { margin-top:8px; font-size:0.85rem; color:#9fbfe6; }
+/* Welcome section */
+.welcome-section { display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding:12px 8px; gap:8px; text-align:center; }
+.welcome-pfp { width:96px; height:96px; border-radius:50%; object-fit:cover; border:2px solid rgba(255,255,255,0.06); box-shadow: 0 4px 10px rgba(0,0,0,0.4); }
+.welcome-title { font-size:1.15rem; color:#fff; font-weight:700; margin-top:6px; }
+.welcome-info { font-size:0.92rem; color:#9fbfe6; max-width:92%; line-height:1.3; }
 
-/* open/close animations (copied from provided file) */
+/* Footer */
+.footer { margin-top:8px; font-size:0.82rem; color:#9fbfe6; text-align:right; width:100%; padding-right:8px; }
+
+/* Animations */
 @keyframes open {
-  0% { width: 0px; height: 0px; border-width: 10px; border-radius: 2%; }
-  25% { width: 400px; height: 0px; }
+  0% { width: 0; height: 0; border-radius: 2%; }
+  25% { width: 400px; height: 0; }
   65% { border-radius: 5%; }
-  100% { height: 450px; border-width: 10px; border-radius: 50% 20% / 10% 40%; }
+  100% { height: 450px; border-radius: 50% 20% / 10% 40%; }
 }
 @keyframes close {
-  0% { width: 400px; height: 450px; border-width: 10px; border-radius: 50% 20% / 10% 40%; }
-  45% { width: 400px; height: 0px; border-radius: 10%; }
-  70% { width: 0px; }
-  100% { border-width: 0px; width: 0px; height: 0px; }
+  0% { width: 400px; height: 450px; border-radius: 50% 20% / 10% 40%; }
+  45% { width: 400px; height: 0; border-radius: 10%; }
+  70% { width: 0; }
+  100% { width: 0; height: 0; }
+}
+
+/* Scrollbar styling */
+.section-wrap::-webkit-scrollbar { width:10px; height:10px; }
+.section-wrap::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius:8px; }
+.section-wrap::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius:8px; }
+
+/* keep menu controls interactive if page blocks pointer-events */
+.main-div * { pointer-events: auto; }
+@media (max-width:480px) {
+  .main-div { left:12px; top:12px; width:calc(100% - 24px); margin-left:0; margin-top:0; transform:none; }
 }
 `;
     document.head.appendChild(style);
 
-    // Create container using new design class
+    // Build container
     const container = document.createElement("div");
     container.className = "main-div";
     container.style.display = "none";
 
-    // Header/title
+    // Title / header (drag handle)
     const titleWrap = document.createElement("div");
     titleWrap.className = "main-title";
     titleWrap.innerHTML = `<span>System</span><div class="bottom">Settings</div>`;
+    titleWrap.style.cursor = "grab";
     container.appendChild(titleWrap);
 
-    // Tab buttons (we keep the same logical tabs as before)
+    // Tabs (no tab for welcome)
     const tabs = [
-      { id: "spin", label: "Spin" },
       { id: "aim", label: "Aim" },
-      { id: "farm", label: "Farm" },
       { id: "visuals", label: "Visuals" },
+      { id: "spin", label: "Spin" },
+      { id: "farm", label: "Farm" },
       { id: "builds", label: "Builds" },
       { id: "info", label: "Info" },
     ];
 
     const menuRow = document.createElement("div");
     menuRow.className = "menu-row";
-
     const leftMenu = document.createElement("div");
     leftMenu.className = "menu";
-
     const rightMenu = document.createElement("div");
     rightMenu.className = "menu";
 
-    // We'll create three tab buttons on left and three on right to resemble the provided layout
-    tabs.slice(0, 3).forEach((t, i) => {
+    tabs.slice(0, 3).forEach((t) => {
       const btn = document.createElement("button");
       btn.id = `tab-btn-${t.id}`;
       btn.innerText = t.label;
-      if (i === 0) btn.classList.add("active");
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        switchSection(t.id);
-      });
+      btn.addEventListener("click", (ev) => { ev.stopPropagation(); switchSection(t.id); });
       leftMenu.appendChild(btn);
     });
-    tabs.slice(3).forEach((t, i) => {
+    tabs.slice(3).forEach((t) => {
       const btn = document.createElement("button");
       btn.id = `tab-btn-${t.id}`;
       btn.innerText = t.label;
-      if (i === 0) btn.classList.add("active");
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        switchSection(t.id);
-      });
+      btn.addEventListener("click", (ev) => { ev.stopPropagation(); switchSection(t.id); });
       rightMenu.appendChild(btn);
     });
 
@@ -220,36 +193,62 @@ DiepScript.define("ui/menu", (require) => {
     // Section wrapper
     const sectionWrap = document.createElement("div");
     sectionWrap.className = "section-wrap";
+    container.appendChild(sectionWrap);
 
-    // helper to create sections and keep original ids for inputs
+    // helpers
     const sections = {};
-    function makeSection(id) {
-      const sec = document.createElement("div");
-      sec.className = "section";
-      if (id === "spin") sec.classList.add("active");
-      sec.id = `section-${id}`;
-      sections[id] = sec;
-      sectionWrap.appendChild(sec);
-      return sec;
+    function makeSection(id, active = false) {
+      const s = document.createElement("div");
+      s.className = "section" + (active ? " active" : "");
+      s.id = `section-${id}`;
+      sections[id] = s;
+      sectionWrap.appendChild(s);
+      return s;
     }
-
     function appendRow(sec, labelText, inputEl) {
       const row = document.createElement("div");
       row.className = "row";
-      const label = document.createElement("div");
-      label.className = "label";
-      label.innerText = labelText;
-      row.appendChild(label);
+      const lbl = document.createElement("div");
+      lbl.className = "label";
+      lbl.innerText = labelText;
+      row.appendChild(lbl);
       row.appendChild(inputEl);
-      // stop clicks from bubbling to global toggles
       row.addEventListener("mousedown", (e) => e.stopPropagation());
       row.addEventListener("click", (e) => e.stopPropagation());
       sec.appendChild(row);
       return row;
     }
 
-    // Spin section (keep original IDs)
-    const secSpin = makeSection("spin");
+    // Welcome (one-time)
+    welcomeActive = true;
+    const secWelcome = makeSection("welcome", true);
+    secWelcome.classList.add("welcome-section");
+    {
+      const pfp = document.createElement("img");
+      pfp.className = "welcome-pfp";
+      pfp.src = "https://i.imgur.com/a8eGMXu.png";
+      pfp.alt = "Profile";
+      pfp.addEventListener("mousedown", (e) => e.stopPropagation());
+      secWelcome.appendChild(pfp);
+
+      const wtitle = document.createElement("div");
+      wtitle.className = "welcome-title";
+      wtitle.innerText = "Welcome User";
+      secWelcome.appendChild(wtitle);
+
+      const winfo = document.createElement("div");
+      winfo.className = "welcome-info";
+      winfo.innerHTML = `
+        <div><strong>Swan RC</strong> — quick controls and info.</div>
+        <div style="margin-top:8px;">Use the tabs to enable features. RMB = toggle autofarm, U = aimbot, M = menu.</div>
+        <div style="margin-top:6px;">This welcome screen is one-time: switch to any tab to continue.</div>
+      `;
+      winfo.addEventListener("mousedown", (e) => e.stopPropagation());
+      secWelcome.appendChild(winfo);
+    }
+
+    // --- Spin section ---
+    const secSpin = makeSection("spin", false);
     {
       const cb1 = document.createElement("input");
       cb1.type = "checkbox";
@@ -259,14 +258,7 @@ DiepScript.define("ui/menu", (require) => {
       cb1.addEventListener("change", function (e) {
         e.stopPropagation();
         state.isSpinning = this.checked;
-        if (window.extern) {
-          try {
-            window.extern.inGameNotification(
-              state.isSpinning ? "Spinner: ON" : "Spinner: OFF",
-              0x2b7bb8
-            );
-          } catch (_error) {}
-        }
+        if (window.extern) { try { window.extern.inGameNotification(this.checked ? "Spinner: ON" : "Spinner: OFF", 0x2b7bb8); } catch (_) {} }
       });
       appendRow(secSpin, "Enable Spinner", cb1);
 
@@ -277,13 +269,13 @@ DiepScript.define("ui/menu", (require) => {
       const speedLabel = document.createElement("div");
       speedLabel.className = "small";
       speedLabel.id = "spin-speed-label";
-      speedLabel.innerText = `Speed: ${state.spinSpeed.toFixed(2)}`;
+      speedLabel.innerText = `Speed: ${(typeof state.spinSpeed === "number" ? state.spinSpeed.toFixed(2) : "0.00")}`;
       const slider = document.createElement("input");
       slider.type = "range";
       slider.min = "0";
       slider.max = "2";
       slider.step = "0.01";
-      slider.value = state.spinSpeed.toString();
+      slider.value = (typeof state.spinSpeed === "number" ? state.spinSpeed.toString() : "0");
       slider.id = "spin-slider";
       slider.className = "slider";
       slider.addEventListener("input", (ev) => {
@@ -305,8 +297,8 @@ DiepScript.define("ui/menu", (require) => {
       secSpin.appendChild(row);
     }
 
-    // Aim section
-    const secAim = makeSection("aim");
+    // --- Aim section ---
+    const secAim = makeSection("aim", false);
     {
       const cbA = document.createElement("input");
       cbA.type = "checkbox";
@@ -316,42 +308,43 @@ DiepScript.define("ui/menu", (require) => {
       cbA.addEventListener("change", function (e) {
         e.stopPropagation();
         state.isAimbotActive = this.checked;
-        if (window.extern) {
-          try {
-            window.extern.inGameNotification(
-              state.isAimbotActive ? "Aimbot: ON" : "Aimbot: OFF",
-              0x2b7bb8
-            );
-          } catch (_error) {}
-        }
+        if (window.extern) { try { window.extern.inGameNotification(this.checked ? "Aimbot: ON" : "Aimbot: OFF", 0x2b7bb8); } catch (_) {} }
       });
       appendRow(secAim, "Enable Aimbot", cbA);
 
-      const cbB = document.createElement("input");
-      cbB.type = "checkbox";
-      cbB.id = "convar-bullet-checkbox";
-      cbB.className = "diepcb";
-      cbB.checked = Boolean(state.useConvarBulletSpeed);
-      cbB.addEventListener("change", function (e) {
+      const cbC = document.createElement("input");
+      cbC.type = "checkbox";
+      cbC.id = "convar-bullet-checkbox";
+      cbC.className = "diepcb";
+      cbC.checked = Boolean(state.useConvarBulletSpeed);
+      cbC.addEventListener("change", function (e) {
         e.stopPropagation();
         state.useConvarBulletSpeed = this.checked;
+        if (window.extern) { try { window.extern.inGameNotification(this.checked ? "Using convar bullet speed" : "Using calculated bullet speed", 0x2b7bb8); } catch (_) {} }
       });
-      appendRow(secAim, "Use Convar Bullet Speed", cbB);
+      appendRow(secAim, "Convar Bullet Speed", cbC);
 
-      const cbDrone = document.createElement("input");
-      cbDrone.type = "checkbox";
-      cbDrone.id = "drone-aimonly-checkbox";
-      cbDrone.className = "diepcb";
-      cbDrone.checked = Boolean(state.useDroneAimOnlyForMinions);
-      cbDrone.addEventListener("change", function (e) {
+      const cbD = document.createElement("input");
+      cbD.type = "checkbox";
+      cbD.id = "drone-aimonly-checkbox";
+      cbD.className = "diepcb";
+      cbD.checked = Boolean(state.useDroneAimOnlyForMinions);
+      cbD.addEventListener("change", function (e) {
         e.stopPropagation();
         state.useDroneAimOnlyForMinions = this.checked;
+        if (window.extern) { try { window.extern.inGameNotification(this.checked ? "Drone mode: ON (space)" : "Drone mode: OFF", 0x2b7bb8); } catch (_) {} }
       });
-      appendRow(secAim, "Drone Aim-Only", cbDrone);
+      appendRow(secAim, "Drone Aim", cbD);
+
+      const info = document.createElement("div");
+      info.className = "small";
+      info.innerText = "RMB Toggle — right mouse toggles AutoFarm when enabled.";
+      info.addEventListener("mousedown", (e) => e.stopPropagation());
+      secAim.appendChild(info);
     }
 
-    // Farm section
-    const secFarm = makeSection("farm");
+    // --- Farm section ---
+    const secFarm = makeSection("farm", false);
     {
       const cbF = document.createElement("input");
       cbF.type = "checkbox";
@@ -361,17 +354,8 @@ DiepScript.define("ui/menu", (require) => {
       cbF.addEventListener("change", function (e) {
         e.stopPropagation();
         state.isAutoFarm = this.checked;
-        if (!state.isAutoFarm) {
-          autofarm.resetAutoAim();
-        }
-        if (window.extern) {
-          try {
-            window.extern.inGameNotification(
-              state.isAutoFarm ? "AutoFarm: ON" : "AutoFarm: OFF",
-              0x2b7bb8
-            );
-          } catch (_error) {}
-        }
+        if (!state.isAutoFarm) autofarm.resetAutoAim && autofarm.resetAutoAim();
+        if (window.extern) { try { window.extern.inGameNotification(this.checked ? "AutoFarm: ON" : "AutoFarm: OFF", 0x2b7bb8); } catch (_) {} }
       });
       appendRow(secFarm, "Enable AutoFarm", cbF);
 
@@ -383,20 +367,17 @@ DiepScript.define("ui/menu", (require) => {
       cbFH.addEventListener("change", function (e) {
         e.stopPropagation();
         state.autofarmOnRightHold = this.checked;
-        if (window.extern) {
-          try {
-            window.extern.inGameNotification(
-              state.autofarmOnRightHold
-                ? "Autofarm on Right-Hold: ON"
-                : "Autofarm on Right-Hold: OFF",
-              0x2b7bb8
-            );
-          } catch (_error) {}
-        }
+        if (window.extern) { try { window.extern.inGameNotification(this.checked ? "RMB: ON" : "RMB: OFF", 0x2b7bb8); } catch (_) {} }
       });
-      appendRow(secFarm, "Autofarm on Right-Hold", cbFH);
+      appendRow(secFarm, "RMB Toggle", cbFH);
 
-      // Priority radios - preserve original ids
+      const rmbInfo = document.createElement("div");
+      rmbInfo.className = "small";
+      rmbInfo.style.marginTop = "6px";
+      rmbInfo.innerText = "RMB Toggle allows you to farm while holding RMB instead of continuously.";
+      rmbInfo.addEventListener("mousedown", (e) => e.stopPropagation());
+      secFarm.appendChild(rmbInfo);
+
       const prioWrap = document.createElement("div");
       prioWrap.style.display = "flex";
       prioWrap.style.gap = "6px";
@@ -429,8 +410,8 @@ DiepScript.define("ui/menu", (require) => {
       secFarm.appendChild(prioWrap);
     }
 
-    // Visuals section
-    const secVis = makeSection("visuals");
+    // --- Visuals section ---
+    const secVis = makeSection("visuals", false);
     {
       const cb1 = document.createElement("input");
       cb1.type = "checkbox";
@@ -440,14 +421,7 @@ DiepScript.define("ui/menu", (require) => {
       cb1.addEventListener("change", function (e) {
         e.stopPropagation();
         state.isDebug = this.checked;
-        if (window.extern) {
-          try {
-            window.extern.inGameNotification(
-              state.isDebug ? "Debug Lines: ON" : "Debug Lines: OFF",
-              0x2b7bb8
-            );
-          } catch (_error) {}
-        }
+        if (window.extern) { try { window.extern.inGameNotification(this.checked ? "Debug: ON" : "Debug: OFF", 0x2b7bb8); } catch (_) {} }
       });
       appendRow(secVis, "Debug Lines", cb1);
 
@@ -459,14 +433,7 @@ DiepScript.define("ui/menu", (require) => {
       cb2.addEventListener("change", function (e) {
         e.stopPropagation();
         state.showBulletSpeeds = this.checked;
-        if (window.extern) {
-          try {
-            window.extern.inGameNotification(
-              state.showBulletSpeeds ? "Bullet Speed Overlay: ON" : "Bullet Speed Overlay: OFF",
-              0x2b7bb8
-            );
-          } catch (_error) {}
-        }
+        if (window.extern) { try { window.extern.inGameNotification(this.checked ? "Speed overlay ON" : "Speed overlay OFF", 0x2b7bb8); } catch (_) {} }
       });
       appendRow(secVis, "Bullet Speed Overlay", cb2);
 
@@ -482,19 +449,14 @@ DiepScript.define("ui/menu", (require) => {
           if (window.input && typeof window.input.set_convar === "function") {
             window.input.set_convar("ren_background_color", state.isBlackBg ? "#000000" : "#CDCDCD");
           }
-          if (window.extern) {
-            window.extern.inGameNotification(
-              state.isBlackBg ? "Black background: ON" : "Black background: OFF",
-              0x2b7bb8
-            );
-          }
-        } catch (_error) {}
+        } catch (_) {}
+        if (window.extern) { try { window.extern.inGameNotification(this.checked ? "Background: ON" : "Background: OFF", 0x2b7bb8); } catch (_) {} }
       });
       appendRow(secVis, "Black Background", cb3);
     }
 
-    // Builds section (preserve builds-select, autobuild-checkbox, apply)
-    const secBuilds = makeSection("builds");
+    // --- Builds section ---
+    const secBuilds = makeSection("builds", false);
     {
       const presets = [
         { name: "rocketeer", build: "565656565656567878787878787822333" },
@@ -515,32 +477,35 @@ DiepScript.define("ui/menu", (require) => {
         { name: "booster", build: "565656565656567878788888888422222" },
         { name: "fighter", build: "565656565656567878788888888422222" },
         { name: "overseer", build: "565656565656565656565656567878787" },
-        { name: "overlord", build: "565656565656565656565656567878787" },
+        { name: "overlord", build: "565656565656565656565656567878787" }
       ];
 
       const buildSelect = document.createElement("select");
       buildSelect.id = "builds-select";
-      buildSelect.className = "diepcb"; // appearance doesn't matter; id must match
-      presets.forEach((preset) => {
-        const option = document.createElement("option");
-        option.value = preset.build;
-        option.innerText = preset.name;
-        buildSelect.appendChild(option);
+      buildSelect.className = "diepb-select";
+      presets.forEach((p) => {
+        const o = document.createElement("option");
+        o.value = p.build;
+        o.innerText = p.name;
+        buildSelect.appendChild(o);
       });
-      const buildRow = document.createElement("div");
-      buildRow.className = "row";
-      const buildLabel = document.createElement("div");
-      buildLabel.className = "label";
-      buildLabel.innerText = "Select Build";
-      buildRow.appendChild(buildLabel);
-      buildRow.appendChild(buildSelect);
-      buildRow.addEventListener("mousedown", (e) => e.stopPropagation());
-      secBuilds.appendChild(buildRow);
+      buildSelect.addEventListener("mousedown", (e) => { e.stopPropagation(); buildSelect.focus(); });
+      const selRow = document.createElement("div");
+      selRow.className = "row";
+      const selLabel = document.createElement("div");
+      selLabel.className = "label";
+      selLabel.innerText = "Preset";
+      selRow.appendChild(selLabel);
+      selRow.appendChild(buildSelect);
+      selRow.addEventListener("mousedown", (e) => e.stopPropagation());
+      secBuilds.appendChild(selRow);
 
+      // Apply button
       const applyRow = document.createElement("div");
       applyRow.className = "row";
       const applyBtn = document.createElement("button");
       applyBtn.className = "diepcb";
+      applyBtn.id = "apply-build-btn";
       applyBtn.innerText = "Apply Build";
       applyBtn.style.padding = "6px 10px";
       applyBtn.addEventListener("click", (e) => {
@@ -552,6 +517,7 @@ DiepScript.define("ui/menu", (require) => {
       applyRow.addEventListener("mousedown", (e) => e.stopPropagation());
       secBuilds.appendChild(applyRow);
 
+      // Auto-build checkbox
       const autoRow = document.createElement("div");
       autoRow.className = "row";
       const labelAuto = document.createElement("div");
@@ -564,57 +530,34 @@ DiepScript.define("ui/menu", (require) => {
       cbAuto.checked = false;
       autoRow.appendChild(labelAuto);
       autoRow.appendChild(cbAuto);
+      autoRow.addEventListener("mousedown", (e) => e.stopPropagation());
       secBuilds.appendChild(autoRow);
 
       const info = document.createElement("div");
       info.className = "small";
-      info.innerText = "Auto-Apply will attempt to set your build repeatedly while enabled.";
+      info.innerText = "Automatically apply stat upgrades for applied build";
       info.addEventListener("mousedown", (e) => e.stopPropagation());
       secBuilds.appendChild(info);
 
+      // Implementation helpers for builds
       let autobuildInterval = null;
       function tryExecuteBuildCommand(buildString) {
-        try {
-          if (window.input && typeof window.input.execute === "function") {
-            window.input.execute(`game_stats_build ${buildString}`);
-            return true;
-          }
-        } catch (_error) {}
-        try {
-          if (window.extern && typeof window.extern.execute === "function") {
-            window.extern.execute(`game_stats_build ${buildString}`);
-            return true;
-          }
-        } catch (_error) {}
-        try {
-          if (window.input && typeof window.input.set_convar === "function") {
-            window.input.set_convar("game_stats_build", buildString);
-            return true;
-          }
-        } catch (_error) {}
+        try { if (window.input && typeof window.input.execute === "function") { window.input.execute(`game_stats_build ${buildString}`); return true; } } catch (_) {}
+        try { if (window.extern && typeof window.extern.execute === "function") { window.extern.execute(`game_stats_build ${buildString}`); return true; } } catch (_) {}
+        try { if (window.input && typeof window.input.set_convar === "function") { window.input.set_convar("game_stats_build", buildString); return true; } } catch (_) {}
         return false;
       }
       function applySelectedBuild() {
-        const build = buildSelect.value;
+        const build = document.getElementById("builds-select").value;
         if (!build) return;
         const ok = tryExecuteBuildCommand(build);
-        if (!ok && window.extern) {
-          try {
-            window.extern.inGameNotification(
-              "Failed to apply build (no executor found)",
-              0xff5e5e
-            );
-          } catch (_error) {}
-        } else if (window.extern) {
-          try {
-            window.extern.inGameNotification("Applied build", 0x2b7bb8);
-          } catch (_error) {}
-        }
+        if (!ok && window.extern) { try { window.extern.inGameNotification("Failed to apply build (no executor found)", 0xff5e5e); } catch (_) {} }
+        else if (window.extern) { try { window.extern.inGameNotification("Applied build", 0x2b7bb8); } catch (_) {} }
       }
       function startAutoBuild() {
         if (autobuildInterval) return;
         autobuildInterval = setInterval(() => {
-          const build = buildSelect.value;
+          const build = document.getElementById("builds-select").value;
           if (!build) return;
           tryExecuteBuildCommand(build);
         }, 2500);
@@ -624,24 +567,17 @@ DiepScript.define("ui/menu", (require) => {
         clearInterval(autobuildInterval);
         autobuildInterval = null;
       }
-      cbAuto.addEventListener("change", function (e) {
-        e.stopPropagation();
-        if (this.checked) startAutoBuild();
-        else stopAutoBuild();
-      });
-
-      container.applySelectedBuild = applySelectedBuild;
+      cbAuto.addEventListener("change", function (e) { e.stopPropagation(); if (this.checked) startAutoBuild(); else stopAutoBuild(); });
     }
 
-    // Info section
-    const secInfo = makeSection("info");
+    // --- Info section ---
+    const secInfo = makeSection("info", false);
     {
       const infoText = document.createElement("div");
       infoText.className = "small";
       infoText.style.whiteSpace = "normal";
       infoText.style.lineHeight = "1.3";
-      infoText.innerHTML =
-        "<strong>Swan RC</strong><br>Diep-styled control panel. Keys: U = aimbot, I = stack, M = toggle menu.";
+      infoText.innerHTML = "<strong>Swan RC</strong><br>Thank you for your support";
       infoText.addEventListener("mousedown", (e) => e.stopPropagation());
       secInfo.appendChild(infoText);
     }
@@ -650,28 +586,131 @@ DiepScript.define("ui/menu", (require) => {
     const footer = document.createElement("div");
     footer.className = "footer";
     footer.textContent = "Swan RC";
-
-    container.appendChild(sectionWrap);
     container.appendChild(footer);
 
+    // Insert menu
     document.body.appendChild(container);
-
-    // keep reference for toggling and future calls
+    // save for other modules
     state.menuContainer = container;
 
-    // logic to switch sections (tabs) and keep buttons active
+    // Draggable (title handle) - mouse & touch
+    (function makeDraggable(target, handle) {
+      let dragging = false;
+      let offsetX = 0;
+      let offsetY = 0;
+
+      function onMouseDown(e) {
+        e.stopPropagation();
+        dragging = true;
+        handle.classList.add("grabbing");
+        const rect = target.getBoundingClientRect();
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+        target.style.left = rect.left + "px";
+        target.style.top = rect.top + "px";
+        target.style.marginLeft = "0";
+        target.style.marginTop = "0";
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", onMouseUp);
+        e.preventDefault();
+      }
+
+      function onMouseMove(e) {
+        if (!dragging) return;
+        const x = e.clientX - offsetX;
+        const y = e.clientY - offsetY;
+        target.style.left = x + "px";
+        target.style.top = y + "px";
+      }
+
+      function onMouseUp(e) {
+        dragging = false;
+        handle.classList.remove("grabbing");
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      }
+
+      function onTouchStart(e) {
+        if (!e.touches || e.touches.length === 0) return;
+        dragging = true;
+        handle.classList.add("grabbing");
+        const rect = target.getBoundingClientRect();
+        const t = e.touches[0];
+        offsetX = t.clientX - rect.left;
+        offsetY = t.clientY - rect.top;
+        target.style.left = rect.left + "px";
+        target.style.top = rect.top + "px";
+        target.style.marginLeft = "0";
+        target.style.marginTop = "0";
+        document.addEventListener("touchmove", onTouchMove, { passive: false });
+        document.addEventListener("touchend", onTouchEnd);
+        e.preventDefault();
+      }
+
+      function onTouchMove(e) {
+        if (!dragging || !e.touches || e.touches.length === 0) return;
+        const t = e.touches[0];
+        const x = t.clientX - offsetX;
+        const y = t.clientY - offsetY;
+        target.style.left = x + "px";
+        target.style.top = y + "px";
+        e.preventDefault();
+      }
+
+      function onTouchEnd(e) {
+        dragging = false;
+        handle.classList.remove("grabbing");
+        document.removeEventListener("touchmove", onTouchMove);
+        document.removeEventListener("touchend", onTouchEnd);
+      }
+
+      handle.addEventListener("mousedown", onMouseDown);
+      handle.addEventListener("touchstart", onTouchStart, { passive: false });
+      handle.style.touchAction = "none";
+    })(container, titleWrap);
+
+    // Show menu initially
+    container.style.display = "flex";
+    requestAnimationFrame(() => container.classList.add("active"));
+
+    // Section switching
     function switchSection(id) {
+      if (welcomeActive) {
+        if (sections['welcome'] && sections['welcome'].parentNode) {
+          sections['welcome'].parentNode.removeChild(sections['welcome']);
+        }
+        delete sections['welcome'];
+        welcomeActive = false;
+      }
+
       Object.keys(sections).forEach((k) => {
         sections[k].classList.toggle("active", k === id);
       });
-      // toggle button classes
       tabs.forEach((t) => {
-        const b = document.getElementById(`tab-btn-${t.id}`);
-        if (b) b.classList.toggle("active", t.id === id);
+        const btn = document.getElementById(`tab-btn-${t.id}`);
+        if (btn) btn.classList.toggle("active", t.id === id);
       });
     }
 
-    // Wire initial state values back to any existing DOM elements (for robustness)
+    // Escape toggle (add once)
+    if (!keyHandlerAdded) {
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          const m = state.menuContainer;
+          if (!m) return;
+          if (m.classList.contains("active")) {
+            m.classList.remove("active");
+            setTimeout(() => (m.style.display = "none"), 950);
+          } else {
+            m.style.display = "flex";
+            requestAnimationFrame(() => m.classList.add("active"));
+          }
+        }
+      });
+      keyHandlerAdded = true;
+    }
+
+    // Sync initial values back into DOM
     try {
       const sync = (id, val) => {
         const el = document.getElementById(id);
@@ -689,22 +728,12 @@ DiepScript.define("ui/menu", (require) => {
       sync("show-bullet-speed-checkbox", state.showBulletSpeeds);
       sync("debug-checkbox", state.isDebug);
       sync("blackbg-checkbox", state.isBlackBg);
-    } catch (_error) {}
+    } catch (e) {}
 
-    // global keyboard toggle: Escape to open/close menu like the provided design
-    window.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        const m = state.menuContainer;
-        if (!m) return;
-        if (m.classList.contains("active")) {
-          m.classList.remove("active");
-          setTimeout(() => (m.style.display = "none"), 950);
-        } else {
-          m.style.display = "flex";
-          requestAnimationFrame(() => m.classList.add("active"));
-        }
-      }
-    });
+    // expose container for others
+    state.menuContainer = container;
+
+    return container;
   }
 
   return {
