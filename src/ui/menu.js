@@ -1,204 +1,176 @@
 DiepScript.define("ui/menu", (require) => {
-  // Recreates the Diep-style control panel so players can toggle features live.
+  // Replaces the original Diep-style control panel with the new visual design
+  // while preserving all original element IDs and functionality.
   const state = require("core/state");
   const autofarm = require("features/autofarm");
 
   function ensureMenu() {
     if (state.menuContainer && state.menuContainer.parentNode) {
-      state.menuContainer.style.display = "none";
+      // If the menu exists, toggle visibility by removing/adding .active
+      const el = state.menuContainer;
+      if (el.classList.contains("active")) {
+        el.classList.remove("active");
+        // let original hide behavior still possible
+        setTimeout(() => (el.style.display = "none"), 950);
+      } else {
+        el.style.display = "flex";
+        // allow layout, then animate open
+        requestAnimationFrame(() => el.classList.add("active"));
+      }
       return;
     }
 
-    // One-off stylesheet keeps the menu self-contained and avoids leaking to the page.
+    // Inject the new CSS (derived from the provided menu design)
     const style = document.createElement("style");
     style.textContent = `
-    :root{
-      --inset-width: 100vw;
-      --inset-height: 100vh;
-      --netcolor0: #555555;
-      --netcolor1: #999999;
-      --netcolor2: #00b2e1;
-      --netcolor3: #00b2e1;
-      --netcolor4: #f14e54;
-      --netcolor5: #bf7ff5;
-      --netcolor6: #00e16e;
-      --netcolor7: #8aff69;
-      --netcolor8: #ffe869;
-      --netcolor9: #fc7677;
-      --netcolor10: #768dfc;
-      --netcolor11: #f177dd;
-      --netcolor12: #ffe869;
-      --netcolor13: #43ff91;
-      --netcolor14: #bbbbbb;
-      --netcolor15: #f14e54;
-      --netcolor16: #fcc376;
-      --netcolor17: #c0c0c0;
-      --net-border: var(--netcolor0);
-      --net-cannon: var(--netcolor1);
-      --net-tank: var(--netcolor2);
-      --net-team-blue: var(--netcolor3);
-      --net-team-red: var(--netcolor4);
-      --net-team-purple: var(--netcolor5);
-      --net-team-green: var(--netcolor6);
-      --net-shiny: var(--netcolor7);
-      --net-enemy-square: var(--netcolor8);
-      --net-enemy-triangle: var(--netcolor9);
-      --net-enemy-pentagon: var(--netcolor10);
-      --net-neutral: var(--netcolor12);
-      --uicolor0: #43fff9;
-      --uicolor1: #82ff43;
-      --uicolor2: #ff4343;
-      --uicolor3: #ffde43;
-      --uicolor4: #437fff;
-      --uicolor5: #8543ff;
-      --uicolor6: #f943ff;
-      --border-color: rgba(0,0,0,0.375);
-      --border-radius-setting: 6px;
-      --panel-bg: rgba(10,14,20,0.95);
-      --panel-accent: linear-gradient(180deg, rgba(0,178,225,0.12), rgba(0,142,180,0.06));
-      --muted: #9fbfe6;
-    }
+/* Wrapper and animation from the provided design */
+.main-div {
+  position: absolute;
+  top: 50%;
+  margin-top: -225px;
+  left: 50%;
+  margin-left: -200px;
+  width: 0px;
+  height: 0px;
+  overflow: hidden;
+  background-color: rgba(19, 18, 18, 0.95);
+  font-family: "Kanit", sans-serif;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: rgb(212, 209, 209);
+  z-index: 1000000;
+  border-style: solid;
+  border-radius: 5%;
+  animation: close 0.95s ease-in-out forwards;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+  user-select: none;
+  gap: 8px;
+  padding: 12px;
+}
 
-    .diep-menu {
-      position: fixed;
-      top: 64px;
-      left: 64px;
-      width: 360px;
-      background: var(--panel-bg);
-      color: #e6f0fb;
-      font-family: "Ubuntu", "Segoe UI", Arial, sans-serif;
-      font-size: 13px;
-      z-index: 999999;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-      user-select: none;
-      border: 1px solid var(--border-color);
-      border-radius: calc(var(--border-radius-setting) * 1px);
-      overflow: hidden;
-    }
-    .diep-header {
-      display:flex;
-      align-items:center;
-      gap:10px;
-      padding:10px 12px;
-      background: var(--panel-accent);
-      cursor: move;
-      border-bottom: 1px solid rgba(255,255,255,0.03);
-    }
-    .diep-title { font-weight:700; color:#fff; font-size:15px; }
-    .diep-close {
-      margin-left:auto;
-      background: transparent;
-      color: #fff;
-      border: 1px solid rgba(255,255,255,0.06);
-      width: 28px; height: 24px;
-      display:inline-flex; align-items:center; justify-content:center;
-      cursor:pointer;
-    }
+.main-div.active {
+  width: 400px;
+  height: 450px;
+  transform-origin: 200px 225px;
+  z-index: 1000000;
+  animation: open 0.95s ease-in-out forwards;
+}
 
-    .diep-body { padding: 12px; display:flex; flex-direction:column; gap:10px; }
+/* header */
+.main-title {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:8px;
+}
+.main-title .bottom {
+  font-size: 1.25rem;
+  position: relative;
+}
+.main-title span {
+  font-size: 1rem;
+  display: block;
+  letter-spacing: 0.2rem;
+  transform: translate(-8px, 8px);
+}
 
-    .diep-tabs { display:flex; gap:8px; }
-    .diep-tab {
-      flex:1;
-      text-align:center;
-      padding:6px 6px;
-      background: rgba(255,255,255,0.02);
-      color: var(--muted);
-      cursor:pointer;
-      border: 1px solid rgba(255,255,255,0.03);
-      font-weight:600;
-      user-select:none;
-    }
-    .diep-tab.active {
-      background: linear-gradient(180deg, rgba(67,127,255,0.12), rgba(0,178,225,0.06));
-      color: #fff;
-      border-color: rgba(67,127,255,0.18);
-    }
+/* menu buttons (tabs) */
+.menu-row {
+  display:flex;
+  width:100%;
+  gap:8px;
+  justify-content:space-between;
+}
+.menu {
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+}
+.menu button {
+  color: rgb(190, 184, 184);
+  display: block;
+  position: relative;
+  font-size: 1rem;
+  text-transform: uppercase;
+  background-color: transparent;
+  border: none;
+  cursor: pointer;
+  overflow: hidden;
+  width: 100%;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.03);
+  color: #dbeeff;
+  font-weight:600;
+}
+.menu button:hover { transform: scale(1.02); color: #fff; }
+.menu button.active { background: linear-gradient(180deg, rgba(67,127,255,0.12), rgba(0,178,225,0.06)); color: #fff; border-color: rgba(67,127,255,0.18); }
 
-    .diep-section { display:none; padding-top:6px; }
-    .diep-section.active { display:block; }
+/* sections */
+.section-wrap {
+  width: 100%;
+  display:block;
+  padding-top:8px;
+  overflow: auto;
+  flex:1;
+}
+.section {
+  display:none;
+}
+.section.active { display:block; }
 
-    .diep-row { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.02); }
-    .diep-row:last-child { border-bottom:none; }
-    .diep-label { color:#dbeeff; font-weight:600; }
+/* rows and labels (kept simple so existing ids and controls fit) */
+.row {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:6px 0;
+  border-bottom:1px solid rgba(255,255,255,0.02);
+}
+.row:last-child { border-bottom:none; }
+.label { color:#dbeeff; font-weight:600; font-size:0.95rem; }
+.small { font-size:0.8rem; color:#9fbfe6; margin-top:6px; line-height:1.2; }
 
-    .diep-checkbox { width:16px;height:16px; transform:scale(1.05); margin-left:6px; }
+/* inputs */
+.diepcb { width:16px; height:16px; transform:scale(1.05); margin-left:6px; }
+.slider { width:160px; }
 
-    .diep-slider { width:160px; }
+/* footer */
+.footer { margin-top:8px; font-size:0.85rem; color:#9fbfe6; }
 
-    .diep-small { font-size:11px; color:var(--muted); margin-top:6px; line-height:1.2; }
-
-    .diep-button {
-      -webkit-tap-highlight-color: rgba(0,0,0,0);
-      user-select:none;
-      pointer-events: all;
-      font-family: "Ubuntu", sans-serif;
-      box-sizing: border-box;
-      outline: none;
-      padding: 0.35rem 0.6rem;
-      cursor: pointer;
-      border: calc(2.25px - 0.05px) solid var(--border-color);
-      color: white;
-      text-shadow: 0.8px 0.8px 0 #000, -0.8px 0.8px 0 #000;
-      filter: brightness(95%) contrast(90%);
-      transition: filter 0.12s ease-in-out, transform 0.06s ease;
-      position: relative;
-      font-size: 0.95em;
-      background-color: var(--net-tank);
-      border-left: 2.25px solid var(--border-color);
-      border-right: 2.25px solid rgba(0,0,0,0.2);
-      border-radius: calc(var(--border-radius-setting) * 0.28rem);
-      height: 2.2rem;
-      min-width: 8rem;
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-    }
-    .diep-button:active { transform: translateY(1px) scale(0.997); filter: brightness(92%); }
-
-    .diep-select {
-      width:100%;
-      padding:8px;
-      background: rgba(0,0,0,0.18);
-      border:1px solid rgba(255,255,255,0.04);
-      color:#e6f0fb;
-    }
-
-    .diep-footer { padding:8px 12px; font-size:11px; color:var(--muted); text-align:right; border-top:1px solid rgba(255,255,255,0.02); background: rgba(255,255,255,0.01); }
-    .diep-menu * { pointer-events: auto; }
-    @media (max-width: 480px) {
-      .diep-menu { left: 12px; top: 12px; width: calc(100% - 24px); }
-    }
-  `;
+/* open/close animations (copied from provided file) */
+@keyframes open {
+  0% { width: 0px; height: 0px; border-width: 10px; border-radius: 2%; }
+  25% { width: 400px; height: 0px; }
+  65% { border-radius: 5%; }
+  100% { height: 450px; border-width: 10px; border-radius: 50% 20% / 10% 40%; }
+}
+@keyframes close {
+  0% { width: 400px; height: 450px; border-width: 10px; border-radius: 50% 20% / 10% 40%; }
+  45% { width: 400px; height: 0px; border-radius: 10%; }
+  70% { width: 0px; }
+  100% { border-width: 0px; width: 0px; height: 0px; }
+}
+`;
     document.head.appendChild(style);
 
+    // Create container using new design class
     const container = document.createElement("div");
-    container.className = "diep-menu";
+    container.className = "main-div";
+    container.style.display = "none";
 
-    const header = document.createElement("div");
-    header.className = "diep-header";
+    // Header/title
+    const titleWrap = document.createElement("div");
+    titleWrap.className = "main-title";
+    titleWrap.innerHTML = `<span>System</span><div class="bottom">Settings</div>`;
+    container.appendChild(titleWrap);
 
-    const title = document.createElement("div");
-    title.className = "diep-title";
-    title.innerText = "Swan RC";
-    header.appendChild(title);
-
-    const closeBtn = document.createElement("div");
-    closeBtn.className = "diep-close";
-    closeBtn.innerText = "×";
-    closeBtn.title = "Close menu (M)";
-    closeBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      container.style.display = "none";
-    });
-    header.appendChild(closeBtn);
-
-    const body = document.createElement("div");
-    body.className = "diep-body";
-
-    const tabsWrap = document.createElement("div");
-    tabsWrap.className = "diep-tabs";
-    // Tab metadata drives both the buttons and individual sections.
+    // Tab buttons (we keep the same logical tabs as before)
     const tabs = [
       { id: "spin", label: "Spin" },
       { id: "aim", label: "Aim" },
@@ -207,50 +179,84 @@ DiepScript.define("ui/menu", (require) => {
       { id: "builds", label: "Builds" },
       { id: "info", label: "Info" },
     ];
-    const tabButtons = {};
-    tabs.forEach((tab, idx) => {
-      const btn = document.createElement("div");
-      btn.className = "diep-tab" + (idx === 0 ? " active" : "");
-      btn.id = `diep-tab-${tab.id}`;
-      btn.innerText = tab.label;
-      btn.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        switchTab(tab.id);
-      });
-      tabsWrap.appendChild(btn);
-      tabButtons[tab.id] = btn;
-    });
-    body.appendChild(tabsWrap);
 
+    const menuRow = document.createElement("div");
+    menuRow.className = "menu-row";
+
+    const leftMenu = document.createElement("div");
+    leftMenu.className = "menu";
+
+    const rightMenu = document.createElement("div");
+    rightMenu.className = "menu";
+
+    // We'll create three tab buttons on left and three on right to resemble the provided layout
+    tabs.slice(0, 3).forEach((t, i) => {
+      const btn = document.createElement("button");
+      btn.id = `tab-btn-${t.id}`;
+      btn.innerText = t.label;
+      if (i === 0) btn.classList.add("active");
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        switchSection(t.id);
+      });
+      leftMenu.appendChild(btn);
+    });
+    tabs.slice(3).forEach((t, i) => {
+      const btn = document.createElement("button");
+      btn.id = `tab-btn-${t.id}`;
+      btn.innerText = t.label;
+      if (i === 0) btn.classList.add("active");
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        switchSection(t.id);
+      });
+      rightMenu.appendChild(btn);
+    });
+
+    menuRow.appendChild(leftMenu);
+    menuRow.appendChild(rightMenu);
+    container.appendChild(menuRow);
+
+    // Section wrapper
+    const sectionWrap = document.createElement("div");
+    sectionWrap.className = "section-wrap";
+
+    // helper to create sections and keep original ids for inputs
     const sections = {};
-  function makeSection(id) {
+    function makeSection(id) {
       const sec = document.createElement("div");
-      sec.className = "diep-section" + (id === "spin" ? " active" : "");
-      sec.id = `diep-section-${id}`;
+      sec.className = "section";
+      if (id === "spin") sec.classList.add("active");
+      sec.id = `section-${id}`;
       sections[id] = sec;
-      body.appendChild(sec);
+      sectionWrap.appendChild(sec);
       return sec;
     }
 
-  function appendRowWithStop(sec, row) {
+    function appendRow(sec, labelText, inputEl) {
+      const row = document.createElement("div");
+      row.className = "row";
+      const label = document.createElement("div");
+      label.className = "label";
+      label.innerText = labelText;
+      row.appendChild(label);
+      row.appendChild(inputEl);
+      // stop clicks from bubbling to global toggles
       row.addEventListener("mousedown", (e) => e.stopPropagation());
       row.addEventListener("click", (e) => e.stopPropagation());
       sec.appendChild(row);
+      return row;
     }
 
+    // Spin section (keep original IDs)
     const secSpin = makeSection("spin");
     {
-      const row1 = document.createElement("div");
-      row1.className = "diep-row";
-      const label1 = document.createElement("div");
-      label1.className = "diep-label";
-      label1.innerText = "Enable Spinner";
       const cb1 = document.createElement("input");
       cb1.type = "checkbox";
       cb1.id = "spinner-checkbox";
-      cb1.className = "diep-checkbox";
+      cb1.className = "diepcb";
       cb1.checked = Boolean(state.isSpinning);
-      cb1.addEventListener("change", function onSpinChange(e) {
+      cb1.addEventListener("change", function (e) {
         e.stopPropagation();
         state.isSpinning = this.checked;
         if (window.extern) {
@@ -262,46 +268,52 @@ DiepScript.define("ui/menu", (require) => {
           } catch (_error) {}
         }
       });
-      row1.appendChild(label1);
-      row1.appendChild(cb1);
-      appendRowWithStop(secSpin, row1);
+      appendRow(secSpin, "Enable Spinner", cb1);
 
-      const row2 = document.createElement("div");
-      row2.className = "diep-row";
-      const label2 = document.createElement("div");
-      label2.className = "diep-label";
-      label2.innerText = `Speed: ${state.spinSpeed.toFixed(2)}`;
+      const labelAndSlider = document.createElement("div");
+      labelAndSlider.style.display = "flex";
+      labelAndSlider.style.flexDirection = "column";
+      labelAndSlider.style.alignItems = "flex-end";
+      const speedLabel = document.createElement("div");
+      speedLabel.className = "small";
+      speedLabel.id = "spin-speed-label";
+      speedLabel.innerText = `Speed: ${state.spinSpeed.toFixed(2)}`;
       const slider = document.createElement("input");
       slider.type = "range";
       slider.min = "0";
       slider.max = "2";
       slider.step = "0.01";
       slider.value = state.spinSpeed.toString();
-      slider.className = "diep-slider";
       slider.id = "spin-slider";
+      slider.className = "slider";
       slider.addEventListener("input", (ev) => {
         ev.stopPropagation();
         state.spinSpeed = parseFloat(ev.target.value);
-        label2.innerText = `Speed: ${state.spinSpeed.toFixed(2)}`;
+        speedLabel.innerText = `Speed: ${state.spinSpeed.toFixed(2)}`;
       });
-      row2.appendChild(label2);
-      row2.appendChild(slider);
-      appendRowWithStop(secSpin, row2);
+      labelAndSlider.appendChild(speedLabel);
+      labelAndSlider.appendChild(slider);
+      const row = document.createElement("div");
+      row.className = "row";
+      const lbl = document.createElement("div");
+      lbl.className = "label";
+      lbl.innerText = "Speed";
+      row.appendChild(lbl);
+      row.appendChild(labelAndSlider);
+      row.addEventListener("mousedown", (e) => e.stopPropagation());
+      row.addEventListener("click", (e) => e.stopPropagation());
+      secSpin.appendChild(row);
     }
 
+    // Aim section
     const secAim = makeSection("aim");
     {
-      const row1 = document.createElement("div");
-      row1.className = "diep-row";
-      const label1 = document.createElement("div");
-      label1.className = "diep-label";
-      label1.innerText = "Enable Aimbot";
       const cbA = document.createElement("input");
       cbA.type = "checkbox";
       cbA.id = "aimbot-checkbox";
-      cbA.className = "diep-checkbox";
+      cbA.className = "diepcb";
       cbA.checked = Boolean(state.isAimbotActive);
-      cbA.addEventListener("change", function onAimChange(e) {
+      cbA.addEventListener("change", function (e) {
         e.stopPropagation();
         state.isAimbotActive = this.checked;
         if (window.extern) {
@@ -313,60 +325,40 @@ DiepScript.define("ui/menu", (require) => {
           } catch (_error) {}
         }
       });
-      row1.appendChild(label1);
-      row1.appendChild(cbA);
-      appendRowWithStop(secAim, row1);
+      appendRow(secAim, "Enable Aimbot", cbA);
 
-      const row2 = document.createElement("div");
-      row2.className = "diep-row";
-      const label2 = document.createElement("div");
-      label2.className = "diep-label";
-      label2.innerText = "Use Convar Bullet Speed";
       const cbB = document.createElement("input");
       cbB.type = "checkbox";
       cbB.id = "convar-bullet-checkbox";
-      cbB.className = "diep-checkbox";
+      cbB.className = "diepcb";
       cbB.checked = Boolean(state.useConvarBulletSpeed);
-      cbB.addEventListener("change", function onConvarChange(e) {
+      cbB.addEventListener("change", function (e) {
         e.stopPropagation();
         state.useConvarBulletSpeed = this.checked;
       });
-      row2.appendChild(label2);
-      row2.appendChild(cbB);
-      appendRowWithStop(secAim, row2);
+      appendRow(secAim, "Use Convar Bullet Speed", cbB);
 
-      const row3 = document.createElement("div");
-      row3.className = "diep-row";
-      const label3 = document.createElement("div");
-      label3.className = "diep-label";
-      label3.innerText = "Drone Aim-Only";
       const cbDrone = document.createElement("input");
       cbDrone.type = "checkbox";
       cbDrone.id = "drone-aimonly-checkbox";
-      cbDrone.className = "diep-checkbox";
+      cbDrone.className = "diepcb";
       cbDrone.checked = Boolean(state.useDroneAimOnlyForMinions);
-      cbDrone.addEventListener("change", function onDroneChange(e) {
+      cbDrone.addEventListener("change", function (e) {
         e.stopPropagation();
         state.useDroneAimOnlyForMinions = this.checked;
       });
-      row3.appendChild(label3);
-      row3.appendChild(cbDrone);
-      appendRowWithStop(secAim, row3);
+      appendRow(secAim, "Drone Aim-Only", cbDrone);
     }
 
+    // Farm section
     const secFarm = makeSection("farm");
     {
-      const row1 = document.createElement("div");
-      row1.className = "diep-row";
-      const label1 = document.createElement("div");
-      label1.className = "diep-label";
-      label1.innerText = "Enable AutoFarm";
       const cbF = document.createElement("input");
       cbF.type = "checkbox";
       cbF.id = "autofarm-checkbox";
-      cbF.className = "diep-checkbox";
+      cbF.className = "diepcb";
       cbF.checked = Boolean(state.isAutoFarm);
-      cbF.addEventListener("change", function onFarmChange(e) {
+      cbF.addEventListener("change", function (e) {
         e.stopPropagation();
         state.isAutoFarm = this.checked;
         if (!state.isAutoFarm) {
@@ -381,21 +373,14 @@ DiepScript.define("ui/menu", (require) => {
           } catch (_error) {}
         }
       });
-      row1.appendChild(label1);
-      row1.appendChild(cbF);
-      appendRowWithStop(secFarm, row1);
+      appendRow(secFarm, "Enable AutoFarm", cbF);
 
-      const row2 = document.createElement("div");
-      row2.className = "diep-row";
-      const label2 = document.createElement("div");
-      label2.className = "diep-label";
-      label2.innerText = "Autofarm on Right-Hold";
       const cbFH = document.createElement("input");
       cbFH.type = "checkbox";
       cbFH.id = "autofarm-hold-checkbox";
-      cbFH.className = "diep-checkbox";
+      cbFH.className = "diepcb";
       cbFH.checked = Boolean(state.autofarmOnRightHold);
-      cbFH.addEventListener("change", function onFarmHoldChange(e) {
+      cbFH.addEventListener("change", function (e) {
         e.stopPropagation();
         state.autofarmOnRightHold = this.checked;
         if (window.extern) {
@@ -409,16 +394,9 @@ DiepScript.define("ui/menu", (require) => {
           } catch (_error) {}
         }
       });
-      row2.appendChild(label2);
-      row2.appendChild(cbFH);
-      appendRowWithStop(secFarm, row2);
+      appendRow(secFarm, "Autofarm on Right-Hold", cbFH);
 
-      const priority = document.createElement("div");
-      priority.className = "diep-small";
-      priority.style.marginTop = "6px";
-      priority.innerText = "Priority:";
-      secFarm.appendChild(priority);
-
+      // Priority radios - preserve original ids
       const prioWrap = document.createElement("div");
       prioWrap.style.display = "flex";
       prioWrap.style.gap = "6px";
@@ -451,19 +429,15 @@ DiepScript.define("ui/menu", (require) => {
       secFarm.appendChild(prioWrap);
     }
 
+    // Visuals section
     const secVis = makeSection("visuals");
     {
-      const row1 = document.createElement("div");
-      row1.className = "diep-row";
-      const label1 = document.createElement("div");
-      label1.className = "diep-label";
-      label1.innerText = "Debug Lines";
       const cb1 = document.createElement("input");
       cb1.type = "checkbox";
       cb1.id = "debug-checkbox";
-      cb1.className = "diep-checkbox";
+      cb1.className = "diepcb";
       cb1.checked = Boolean(state.isDebug);
-      cb1.addEventListener("change", function onDebugChange(e) {
+      cb1.addEventListener("change", function (e) {
         e.stopPropagation();
         state.isDebug = this.checked;
         if (window.extern) {
@@ -475,57 +449,38 @@ DiepScript.define("ui/menu", (require) => {
           } catch (_error) {}
         }
       });
-      row1.appendChild(label1);
-      row1.appendChild(cb1);
-      appendRowWithStop(secVis, row1);
+      appendRow(secVis, "Debug Lines", cb1);
 
-      const row2 = document.createElement("div");
-      row2.className = "diep-row";
-      const label2 = document.createElement("div");
-      label2.className = "diep-label";
-      label2.innerText = "Bullet Speed Overlay";
       const cb2 = document.createElement("input");
       cb2.type = "checkbox";
       cb2.id = "show-bullet-speed-checkbox";
-      cb2.className = "diep-checkbox";
+      cb2.className = "diepcb";
       cb2.checked = Boolean(state.showBulletSpeeds);
-      cb2.addEventListener("change", function onBulletOverlayChange(e) {
+      cb2.addEventListener("change", function (e) {
         e.stopPropagation();
         state.showBulletSpeeds = this.checked;
         if (window.extern) {
           try {
             window.extern.inGameNotification(
-              state.showBulletSpeeds
-                ? "Bullet Speed Overlay: ON"
-                : "Bullet Speed Overlay: OFF",
+              state.showBulletSpeeds ? "Bullet Speed Overlay: ON" : "Bullet Speed Overlay: OFF",
               0x2b7bb8
             );
           } catch (_error) {}
         }
       });
-      row2.appendChild(label2);
-      row2.appendChild(cb2);
-      appendRowWithStop(secVis, row2);
+      appendRow(secVis, "Bullet Speed Overlay", cb2);
 
-      const row3 = document.createElement("div");
-      row3.className = "diep-row";
-      const label3 = document.createElement("div");
-      label3.className = "diep-label";
-      label3.innerText = "Black Background";
       const cb3 = document.createElement("input");
       cb3.type = "checkbox";
       cb3.id = "blackbg-checkbox";
-      cb3.className = "diep-checkbox";
+      cb3.className = "diepcb";
       cb3.checked = Boolean(state.isBlackBg);
-      cb3.addEventListener("change", function onBlackBgChange(e) {
+      cb3.addEventListener("change", function (e) {
         e.stopPropagation();
         state.isBlackBg = this.checked;
         try {
           if (window.input && typeof window.input.set_convar === "function") {
-            window.input.set_convar(
-              "ren_background_color",
-              state.isBlackBg ? "#000000" : "#CDCDCD"
-            );
+            window.input.set_convar("ren_background_color", state.isBlackBg ? "#000000" : "#CDCDCD");
           }
           if (window.extern) {
             window.extern.inGameNotification(
@@ -535,14 +490,12 @@ DiepScript.define("ui/menu", (require) => {
           }
         } catch (_error) {}
       });
-      row3.appendChild(label3);
-      row3.appendChild(cb3);
-      appendRowWithStop(secVis, row3);
+      appendRow(secVis, "Black Background", cb3);
     }
 
+    // Builds section (preserve builds-select, autobuild-checkbox, apply)
     const secBuilds = makeSection("builds");
     {
-      // Predefined upgrade strings – mirrors the original script’s build list.
       const presets = [
         { name: "rocketeer", build: "565656565656567878787878787822333" },
         { name: "skimmer", build: "565656565656484848484848487777777" },
@@ -567,49 +520,55 @@ DiepScript.define("ui/menu", (require) => {
 
       const buildSelect = document.createElement("select");
       buildSelect.id = "builds-select";
-      buildSelect.className = "diep-select";
-      buildSelect.addEventListener("mousedown", (e) => {
-        e.stopPropagation();
-        buildSelect.focus();
-      });
+      buildSelect.className = "diepcb"; // appearance doesn't matter; id must match
       presets.forEach((preset) => {
         const option = document.createElement("option");
         option.value = preset.build;
         option.innerText = preset.name;
         buildSelect.appendChild(option);
       });
-      secBuilds.appendChild(buildSelect);
+      const buildRow = document.createElement("div");
+      buildRow.className = "row";
+      const buildLabel = document.createElement("div");
+      buildLabel.className = "label";
+      buildLabel.innerText = "Select Build";
+      buildRow.appendChild(buildLabel);
+      buildRow.appendChild(buildSelect);
+      buildRow.addEventListener("mousedown", (e) => e.stopPropagation());
+      secBuilds.appendChild(buildRow);
 
       const applyRow = document.createElement("div");
-      applyRow.className = "diep-row";
+      applyRow.className = "row";
       const applyBtn = document.createElement("button");
-      applyBtn.className = "diep-button";
+      applyBtn.className = "diepcb";
       applyBtn.innerText = "Apply Build";
+      applyBtn.style.padding = "6px 10px";
       applyBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         applySelectedBuild();
       });
+      applyRow.appendChild(document.createElement("div")); // spacer
       applyRow.appendChild(applyBtn);
-      appendRowWithStop(secBuilds, applyRow);
+      applyRow.addEventListener("mousedown", (e) => e.stopPropagation());
+      secBuilds.appendChild(applyRow);
 
       const autoRow = document.createElement("div");
-      autoRow.className = "diep-row";
+      autoRow.className = "row";
       const labelAuto = document.createElement("div");
-      labelAuto.className = "diep-label";
+      labelAuto.className = "label";
       labelAuto.innerText = "Auto-Apply Build";
       const cbAuto = document.createElement("input");
       cbAuto.type = "checkbox";
       cbAuto.id = "autobuild-checkbox";
-      cbAuto.className = "diep-checkbox";
+      cbAuto.className = "diepcb";
       cbAuto.checked = false;
       autoRow.appendChild(labelAuto);
       autoRow.appendChild(cbAuto);
-      appendRowWithStop(secBuilds, autoRow);
+      secBuilds.appendChild(autoRow);
 
       const info = document.createElement("div");
-      info.className = "diep-small";
-      info.innerText =
-        "Auto-Apply will attempt to set your build repeatedly while enabled.";
+      info.className = "small";
+      info.innerText = "Auto-Apply will attempt to set your build repeatedly while enabled.";
       info.addEventListener("mousedown", (e) => e.stopPropagation());
       secBuilds.appendChild(info);
 
@@ -665,7 +624,6 @@ DiepScript.define("ui/menu", (require) => {
         clearInterval(autobuildInterval);
         autobuildInterval = null;
       }
-
       cbAuto.addEventListener("change", function (e) {
         e.stopPropagation();
         if (this.checked) startAutoBuild();
@@ -675,10 +633,11 @@ DiepScript.define("ui/menu", (require) => {
       container.applySelectedBuild = applySelectedBuild;
     }
 
+    // Info section
     const secInfo = makeSection("info");
     {
       const infoText = document.createElement("div");
-      infoText.className = "diep-small";
+      infoText.className = "small";
       infoText.style.whiteSpace = "normal";
       infoText.style.lineHeight = "1.3";
       infoText.innerHTML =
@@ -687,74 +646,65 @@ DiepScript.define("ui/menu", (require) => {
       secInfo.appendChild(infoText);
     }
 
+    // Footer
     const footer = document.createElement("div");
-    footer.className = "diep-footer";
+    footer.className = "footer";
     footer.textContent = "Swan RC";
 
-    container.appendChild(header);
-    container.appendChild(body);
+    container.appendChild(sectionWrap);
     container.appendChild(footer);
 
     document.body.appendChild(container);
-    container.style.display = "none";
 
-    function switchTab(id) {
-      Object.keys(sections).forEach((key) => {
-        sections[key].classList.toggle("active", key === id);
+    // keep reference for toggling and future calls
+    state.menuContainer = container;
+
+    // logic to switch sections (tabs) and keep buttons active
+    function switchSection(id) {
+      Object.keys(sections).forEach((k) => {
+        sections[k].classList.toggle("active", k === id);
       });
-      Object.keys(tabButtons).forEach((key) => {
-        tabButtons[key].classList.toggle("active", key === id);
+      // toggle button classes
+      tabs.forEach((t) => {
+        const b = document.getElementById(`tab-btn-${t.id}`);
+        if (b) b.classList.toggle("active", t.id === id);
       });
     }
 
-    (function makeDraggable(target, handle) {
-      let dragging = false;
-      let offsetX = 0;
-      let offsetY = 0;
-      handle.addEventListener("mousedown", (e) => {
-        e.stopPropagation();
-        dragging = true;
-        const rect = target.getBoundingClientRect();
-        offsetX = e.clientX - rect.left;
-        offsetY = e.clientY - rect.top;
-        document.addEventListener("mousemove", onMove);
-        document.addEventListener("mouseup", onUp);
-        e.preventDefault();
-      });
-      function onMove(e) {
-        if (!dragging) return;
-        target.style.left = `${e.clientX - offsetX}px`;
-        target.style.top = `${e.clientY - offsetY}px`;
-      }
-      function onUp() {
-        dragging = false;
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
-      }
-    })(container, header);
-
+    // Wire initial state values back to any existing DOM elements (for robustness)
     try {
-      document.getElementById("spinner-checkbox").checked = Boolean(state.isSpinning);
-      document.getElementById("spin-slider").value = state.spinSpeed;
-      document.getElementById("aimbot-checkbox").checked = Boolean(state.isAimbotActive);
-      document.getElementById("convar-bullet-checkbox").checked = Boolean(
-        state.useConvarBulletSpeed
-      );
-      document.getElementById("drone-aimonly-checkbox").checked = Boolean(
-        state.useDroneAimOnlyForMinions
-      );
-      document.getElementById("autofarm-checkbox").checked = Boolean(state.isAutoFarm);
-      document.getElementById("autofarm-hold-checkbox").checked = Boolean(
-        state.autofarmOnRightHold
-      );
-      document.getElementById("show-bullet-speed-checkbox").checked = Boolean(
-        state.showBulletSpeeds
-      );
-      document.getElementById("debug-checkbox").checked = Boolean(state.isDebug);
-      document.getElementById("blackbg-checkbox").checked = Boolean(state.isBlackBg);
+      const sync = (id, val) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (el.type === "checkbox" || el.type === "radio") el.checked = Boolean(val);
+        else el.value = val;
+      };
+      sync("spinner-checkbox", state.isSpinning);
+      sync("spin-slider", state.spinSpeed);
+      sync("aimbot-checkbox", state.isAimbotActive);
+      sync("convar-bullet-checkbox", state.useConvarBulletSpeed);
+      sync("drone-aimonly-checkbox", state.useDroneAimOnlyForMinions);
+      sync("autofarm-checkbox", state.isAutoFarm);
+      sync("autofarm-hold-checkbox", state.autofarmOnRightHold);
+      sync("show-bullet-speed-checkbox", state.showBulletSpeeds);
+      sync("debug-checkbox", state.isDebug);
+      sync("blackbg-checkbox", state.isBlackBg);
     } catch (_error) {}
 
-    state.menuContainer = container;
+    // global keyboard toggle: Escape to open/close menu like the provided design
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        const m = state.menuContainer;
+        if (!m) return;
+        if (m.classList.contains("active")) {
+          m.classList.remove("active");
+          setTimeout(() => (m.style.display = "none"), 950);
+        } else {
+          m.style.display = "flex";
+          requestAnimationFrame(() => m.classList.add("active"));
+        }
+      }
+    });
   }
 
   return {
