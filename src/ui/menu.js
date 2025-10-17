@@ -1,760 +1,736 @@
 DiepScript.define("ui/menu", (require) => {
-  // Recreates the Diep-style control panel so players can toggle features live.
+  // Recreates the Diep-style control panel using the new layout shared in README.
+  // Sections: Combat, Auto, Defense, Extras.
   const state = require("core/state");
   const autofarm = require("features/autofarm");
 
+  const PANEL_IDS = ["combat", "auto", "defense", "extras"];
+
   function ensureMenu() {
     if (state.menuContainer && state.menuContainer.parentNode) {
-      state.menuContainer.style.display = "none";
+      if (typeof state.menuContainer.__hide === "function") {
+        state.menuContainer.__hide();
+      } else {
+        state.menuContainer.style.display = "none";
+      }
       return;
     }
 
-    // One-off stylesheet keeps the menu self-contained and avoids leaking to the page.
-    const style = document.createElement("style");
-    style.textContent = `
-    :root{
-      --inset-width: 100vw;
-      --inset-height: 100vh;
-      --netcolor0: #555555;
-      --netcolor1: #999999;
-      --netcolor2: #00b2e1;
-      --netcolor3: #00b2e1;
-      --netcolor4: #f14e54;
-      --netcolor5: #bf7ff5;
-      --netcolor6: #00e16e;
-      --netcolor7: #8aff69;
-      --netcolor8: #ffe869;
-      --netcolor9: #fc7677;
-      --netcolor10: #768dfc;
-      --netcolor11: #f177dd;
-      --netcolor12: #ffe869;
-      --netcolor13: #43ff91;
-      --netcolor14: #bbbbbb;
-      --netcolor15: #f14e54;
-      --netcolor16: #fcc376;
-      --netcolor17: #c0c0c0;
-      --net-border: var(--netcolor0);
-      --net-cannon: var(--netcolor1);
-      --net-tank: var(--netcolor2);
-      --net-team-blue: var(--netcolor3);
-      --net-team-red: var(--netcolor4);
-      --net-team-purple: var(--netcolor5);
-      --net-team-green: var(--netcolor6);
-      --net-shiny: var(--netcolor7);
-      --net-enemy-square: var(--netcolor8);
-      --net-enemy-triangle: var(--netcolor9);
-      --net-enemy-pentagon: var(--netcolor10);
-      --net-neutral: var(--netcolor12);
-      --uicolor0: #43fff9;
-      --uicolor1: #82ff43;
-      --uicolor2: #ff4343;
-      --uicolor3: #ffde43;
-      --uicolor4: #437fff;
-      --uicolor5: #8543ff;
-      --uicolor6: #f943ff;
-      --border-color: rgba(0,0,0,0.375);
-      --border-radius-setting: 6px;
-      --panel-bg: rgba(10,14,20,0.95);
-      --panel-accent: linear-gradient(180deg, rgba(0,178,225,0.12), rgba(0,142,180,0.06));
-      --muted: #9fbfe6;
-    }
-
-    .diep-menu {
-      position: fixed;
-      top: 64px;
-      left: 64px;
-      width: 360px;
-      background: var(--panel-bg);
-      color: #e6f0fb;
-      font-family: "Ubuntu", "Segoe UI", Arial, sans-serif;
-      font-size: 13px;
-      z-index: 999999;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-      user-select: none;
-      border: 1px solid var(--border-color);
-      border-radius: calc(var(--border-radius-setting) * 1px);
-      overflow: hidden;
-    }
-    .diep-header {
-      display:flex;
-      align-items:center;
-      gap:10px;
-      padding:10px 12px;
-      background: var(--panel-accent);
-      cursor: move;
-      border-bottom: 1px solid rgba(255,255,255,0.03);
-    }
-    .diep-title { font-weight:700; color:#fff; font-size:15px; }
-    .diep-close {
-      margin-left:auto;
-      background: transparent;
-      color: #fff;
-      border: 1px solid rgba(255,255,255,0.06);
-      width: 28px; height: 24px;
-      display:inline-flex; align-items:center; justify-content:center;
-      cursor:pointer;
-    }
-
-    .diep-body { padding: 12px; display:flex; flex-direction:column; gap:10px; }
-
-    .diep-tabs { display:flex; gap:8px; }
-    .diep-tab {
-      flex:1;
-      text-align:center;
-      padding:6px 6px;
-      background: rgba(255,255,255,0.02);
-      color: var(--muted);
-      cursor:pointer;
-      border: 1px solid rgba(255,255,255,0.03);
-      font-weight:600;
-      user-select:none;
-    }
-    .diep-tab.active {
-      background: linear-gradient(180deg, rgba(67,127,255,0.12), rgba(0,178,225,0.06));
-      color: #fff;
-      border-color: rgba(67,127,255,0.18);
-    }
-
-    .diep-section { display:none; padding-top:6px; }
-    .diep-section.active { display:block; }
-
-    .diep-row { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.02); }
-    .diep-row:last-child { border-bottom:none; }
-    .diep-label { color:#dbeeff; font-weight:600; }
-
-    .diep-checkbox { width:16px;height:16px; transform:scale(1.05); margin-left:6px; }
-
-    .diep-slider { width:160px; }
-
-    .diep-small { font-size:11px; color:var(--muted); margin-top:6px; line-height:1.2; }
-
-    .diep-button {
-      -webkit-tap-highlight-color: rgba(0,0,0,0);
-      user-select:none;
-      pointer-events: all;
-      font-family: "Ubuntu", sans-serif;
-      box-sizing: border-box;
-      outline: none;
-      padding: 0.35rem 0.6rem;
-      cursor: pointer;
-      border: calc(2.25px - 0.05px) solid var(--border-color);
-      color: white;
-      text-shadow: 0.8px 0.8px 0 #000, -0.8px 0.8px 0 #000;
-      filter: brightness(95%) contrast(90%);
-      transition: filter 0.12s ease-in-out, transform 0.06s ease;
-      position: relative;
-      font-size: 0.95em;
-      background-color: var(--net-tank);
-      border-left: 2.25px solid var(--border-color);
-      border-right: 2.25px solid rgba(0,0,0,0.2);
-      border-radius: calc(var(--border-radius-setting) * 0.28rem);
-      height: 2.2rem;
-      min-width: 8rem;
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-    }
-    .diep-button:active { transform: translateY(1px) scale(0.997); filter: brightness(92%); }
-
-    .diep-select {
-      width:100%;
-      padding:8px;
-      background: rgba(0,0,0,0.18);
-      border:1px solid rgba(255,255,255,0.04);
-      color:#e6f0fb;
-    }
-
-    .diep-footer { padding:8px 12px; font-size:11px; color:var(--muted); text-align:right; border-top:1px solid rgba(255,255,255,0.02); background: rgba(255,255,255,0.01); }
-    .diep-menu * { pointer-events: auto; }
-    @media (max-width: 480px) {
-      .diep-menu { left: 12px; top: 12px; width: calc(100% - 24px); }
-    }
-  `;
-    document.head.appendChild(style);
+    injectStyles();
 
     const container = document.createElement("div");
-    container.className = "diep-menu";
+    container.className = "ds-menu";
+    container.dataset.open = "false";
 
-    const header = document.createElement("div");
-    header.className = "diep-header";
+    // expose helpers so the input hook can trigger the animation-aware show/hide
+    const showMenu = () => {
+      container.style.display = "flex";
+      // delay to next frame so the animation runs each time
+      requestAnimationFrame(() => {
+        container.classList.add("active");
+        container.dataset.open = "true";
+      });
+    };
+    const hideMenu = () => {
+      container.classList.remove("active");
+      container.dataset.open = "false";
+      setTimeout(() => {
+        if (container.dataset.open !== "true") {
+          container.style.display = "none";
+        }
+      }, 500); // allow close animation to finish
+    };
+    container.__show = showMenu;
+    container.__hide = hideMenu;
+    container.__toggle = () => (container.dataset.open === "true" ? hideMenu() : showMenu());
 
     const title = document.createElement("div");
-    title.className = "diep-title";
-    title.innerText = "Swan RC";
-    header.appendChild(title);
+    title.className = "ds-title";
+    title.innerHTML = `
+      <span class="ds-title-prefix">System</span>
+      <div class="ds-title-main">Settings</div>
+    `;
+    container.appendChild(title);
 
-    const closeBtn = document.createElement("div");
-    closeBtn.className = "diep-close";
-    closeBtn.innerText = "×";
-    closeBtn.title = "Close menu (M)";
-    closeBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      container.style.display = "none";
-    });
-    header.appendChild(closeBtn);
+    const shell = document.createElement("div");
+    shell.className = "ds-shell";
+    container.appendChild(shell);
 
-    const body = document.createElement("div");
-    body.className = "diep-body";
+    const nav = document.createElement("nav");
+    nav.className = "ds-nav";
+    shell.appendChild(nav);
 
-    const tabsWrap = document.createElement("div");
-    tabsWrap.className = "diep-tabs";
-    // Tab metadata drives both the buttons and individual sections.
-    const tabs = [
-      { id: "spin", label: "Spin" },
-      { id: "aim", label: "Aim" },
-      { id: "farm", label: "Farm" },
-      { id: "visuals", label: "Visuals" },
-      { id: "builds", label: "Builds" },
-      { id: "info", label: "Info" },
-    ];
-    const tabButtons = {};
-    tabs.forEach((tab, idx) => {
-      const btn = document.createElement("div");
-      btn.className = "diep-tab" + (idx === 0 ? " active" : "");
-      btn.id = `diep-tab-${tab.id}`;
-      btn.innerText = tab.label;
+    const panelsWrap = document.createElement("div");
+    panelsWrap.className = "ds-panels";
+    shell.appendChild(panelsWrap);
+
+    const navButtons = {};
+    PANEL_IDS.forEach((id, idx) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.dataset.panel = id;
+      btn.className = "ds-nav-btn" + (idx === 0 ? " active" : "");
+      btn.innerText = id.charAt(0).toUpperCase() + id.slice(1);
       btn.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        switchTab(tab.id);
+        switchPanel(id, navButtons, panelsWrap);
       });
-      tabsWrap.appendChild(btn);
-      tabButtons[tab.id] = btn;
+      nav.appendChild(btn);
+      navButtons[id] = btn;
     });
-    body.appendChild(tabsWrap);
 
-    const sections = {};
-  function makeSection(id) {
-      const sec = document.createElement("div");
-      sec.className = "diep-section" + (id === "spin" ? " active" : "");
-      sec.id = `diep-section-${id}`;
-      sections[id] = sec;
-      body.appendChild(sec);
-      return sec;
+    const combatPanel = createPanel("combat", panelsWrap, true);
+    const autoPanel = createPanel("auto", panelsWrap);
+    const defensePanel = createPanel("defense", panelsWrap);
+    const extrasPanel = createPanel("extras", panelsWrap);
+
+    populateCombatPanel(combatPanel);
+    populateAutoPanel(autoPanel);
+    populateDefensePanel(defensePanel);
+    populateExtrasPanel(extrasPanel);
+
+    document.body.appendChild(container);
+    container.style.display = "none";
+    state.menuContainer = container;
+  }
+
+  function injectStyles() {
+    if (document.getElementById("diepscript-menu-styles")) return;
+    const style = document.createElement("style");
+    style.id = "diepscript-menu-styles";
+    style.textContent = `
+      .ds-menu {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 0;
+        height: 0;
+        display: none;
+        flex-direction: column;
+        justify-content: flex-start;
+        align-items: stretch;
+        background: rgba(12, 18, 28, 0.94);
+        color: #dbeeff;
+        font-family: "Ubuntu", "Segoe UI", Arial, sans-serif;
+        border: 1px solid rgba(0, 178, 225, 0.35);
+        border-radius: 18px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65);
+        z-index: 100000;
+        overflow: hidden;
+        pointer-events: auto;
+        animation: ds-close 0.65s ease forwards;
+      }
+
+      .ds-menu.active {
+        width: 560px;
+        height: 430px;
+        animation: ds-open 0.65s ease forwards;
+      }
+
+      .ds-title {
+        padding: 24px 28px 12px;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+      }
+      .ds-title-prefix {
+        display: block;
+        color: rgba(219, 238, 255, 0.68);
+        font-size: 16px;
+        margin-bottom: 4px;
+      }
+      .ds-title-main {
+        font-size: 34px;
+        font-weight: 700;
+        color: #ffffff;
+        text-shadow: 0 0 16px rgba(0, 178, 225, 0.35);
+      }
+
+      .ds-shell {
+        flex: 1;
+        display: flex;
+        gap: 18px;
+        padding: 0 24px 24px;
+      }
+
+      .ds-nav {
+        width: 148px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .ds-nav-btn {
+        position: relative;
+        padding: 12px 16px;
+        border: 1px solid rgba(0, 178, 225, 0.18);
+        border-radius: 10px;
+        background: rgba(0, 178, 225, 0.08);
+        color: rgba(219, 238, 255, 0.75);
+        font-size: 15px;
+        font-weight: 600;
+        text-align: left;
+        cursor: pointer;
+        transition: transform 0.12s ease, border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+      }
+
+      .ds-nav-btn::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        opacity: 0;
+        transition: opacity 0.15s ease;
+      }
+
+      .ds-nav-btn:hover {
+        transform: translateX(4px);
+        color: #ffffff;
+        border-color: rgba(0, 178, 225, 0.35);
+        background: rgba(0, 178, 225, 0.12);
+      }
+
+      .ds-nav-btn.active {
+        color: #ffffff;
+        background: linear-gradient(135deg, rgba(0, 178, 225, 0.22), rgba(67, 127, 255, 0.28));
+        border-color: rgba(67, 127, 255, 0.4);
+      }
+      .ds-nav-btn.active::after {
+        opacity: 1;
+      }
+
+      .ds-panels {
+        flex: 1;
+        min-width: 0;
+        background: rgba(5, 10, 18, 0.65);
+        border: 1px solid rgba(0, 178, 225, 0.12);
+        border-radius: 14px;
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        overflow-y: auto;
+      }
+
+      .ds-panel {
+        display: none;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .ds-panel.active {
+        display: flex;
+      }
+
+      .ds-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 10px;
+      }
+
+      .ds-row label {
+        font-weight: 600;
+        color: #f4fbff;
+      }
+
+      .ds-row-text {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .ds-row.ds-row--stacked {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .ds-row.ds-row--stacked label {
+        margin-bottom: 6px;
+      }
+
+      .ds-row input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+        cursor: pointer;
+        accent-color: #00b2e1;
+      }
+
+      .ds-row input[type="range"] {
+        flex: 1;
+        margin-left: 12px;
+        accent-color: #00b2e1;
+      }
+
+      .ds-row .ds-value {
+        min-width: 80px;
+        text-align: right;
+        font-size: 13px;
+        color: rgba(219, 238, 255, 0.7);
+      }
+
+      .ds-row .ds-hint {
+        font-size: 12px;
+        color: rgba(219, 238, 255, 0.6);
+        margin-top: 6px;
+      }
+
+      .ds-build-block {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .ds-select {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.06);
+        color: #dbeeff;
+        font-size: 14px;
+      }
+
+      .ds-button {
+        align-self: flex-start;
+        padding: 10px 18px;
+        border-radius: 10px;
+        border: 1px solid rgba(0, 178, 225, 0.35);
+        background: linear-gradient(135deg, rgba(0, 178, 225, 0.35), rgba(67, 127, 255, 0.4));
+        color: #ffffff;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        cursor: pointer;
+        transition: transform 0.12s ease, box-shadow 0.12s ease;
+      }
+
+      .ds-button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 12px 24px rgba(0, 178, 225, 0.25);
+      }
+
+      .ds-info {
+        font-size: 13px;
+        line-height: 1.5;
+        color: rgba(219, 238, 255, 0.72);
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 10px;
+        padding: 12px;
+      }
+
+      @keyframes ds-open {
+        0% {
+          width: 0;
+          height: 0;
+          border-radius: 30%;
+        }
+        40% {
+          width: 560px;
+          height: 0;
+        }
+        100% {
+          width: 560px;
+          height: 430px;
+          border-radius: 18px;
+        }
+      }
+
+      @keyframes ds-close {
+        0% {
+          width: 560px;
+          height: 430px;
+        }
+        60% {
+          width: 560px;
+          height: 0;
+        }
+        100% {
+          width: 0;
+          height: 0;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function createPanel(id, wrap, active = false) {
+    const panel = document.createElement("section");
+    panel.className = "ds-panel" + (active ? " active" : "");
+    panel.id = `ds-panel-${id}`;
+    wrap.appendChild(panel);
+    panel.addEventListener("mousedown", (e) => e.stopPropagation());
+    panel.addEventListener("click", (e) => e.stopPropagation());
+    return panel;
+  }
+
+  function switchPanel(id, navButtons, panelsWrap) {
+    Object.values(navButtons).forEach((btn) => btn.classList.remove("active"));
+    if (navButtons[id]) navButtons[id].classList.add("active");
+
+    panelsWrap.querySelectorAll(".ds-panel").forEach((panel) => {
+      panel.classList.toggle("active", panel.id === `ds-panel-${id}`);
+    });
+  }
+
+  function createToggleRow({ id, label, checked, onChange, hint }) {
+    const row = document.createElement("div");
+    row.className = "ds-row";
+
+    const textWrap = document.createElement("div");
+    textWrap.className = "ds-row-text";
+    const labelEl = document.createElement("label");
+    labelEl.htmlFor = id;
+    labelEl.innerText = label;
+    textWrap.appendChild(labelEl);
+
+    const toggle = document.createElement("input");
+    toggle.type = "checkbox";
+    toggle.id = id;
+    toggle.checked = checked;
+    toggle.addEventListener("change", (ev) => {
+      ev.stopPropagation();
+      onChange(ev.target.checked);
+    });
+    if (hint) {
+      const hintEl = document.createElement("div");
+      hintEl.className = "ds-hint";
+      hintEl.innerText = hint;
+      textWrap.appendChild(hintEl);
     }
 
-  function appendRowWithStop(sec, row) {
-      row.addEventListener("mousedown", (e) => e.stopPropagation());
-      row.addEventListener("click", (e) => e.stopPropagation());
-      sec.appendChild(row);
-    }
+    row.appendChild(textWrap);
+    row.appendChild(toggle);
 
-    const secSpin = makeSection("spin");
-    {
-      const row1 = document.createElement("div");
-      row1.className = "diep-row";
-      const label1 = document.createElement("div");
-      label1.className = "diep-label";
-      label1.innerText = "Enable Spinner";
-      const cb1 = document.createElement("input");
-      cb1.type = "checkbox";
-      cb1.id = "spinner-checkbox";
-      cb1.className = "diep-checkbox";
-      cb1.checked = Boolean(state.isSpinning);
-      cb1.addEventListener("change", function onSpinChange(e) {
-        e.stopPropagation();
-        state.isSpinning = this.checked;
-        if (window.extern) {
+    row.addEventListener("mousedown", (e) => e.stopPropagation());
+    row.addEventListener("click", (e) => e.stopPropagation());
+    return row;
+  }
+
+  function createRangeRow({ id, label, min, max, step, value, onInput }) {
+    const row = document.createElement("div");
+    row.className = "ds-row";
+
+    const labelEl = document.createElement("label");
+    labelEl.innerText = label;
+    labelEl.htmlFor = id;
+    row.appendChild(labelEl);
+
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.id = id;
+    slider.min = String(min);
+    slider.max = String(max);
+    slider.step = String(step);
+    slider.value = String(value);
+    row.appendChild(slider);
+
+    const valueEl = document.createElement("div");
+    valueEl.className = "ds-value";
+    valueEl.innerText = value.toFixed(2);
+    row.appendChild(valueEl);
+
+    slider.addEventListener("input", (ev) => {
+      ev.stopPropagation();
+      const val = parseFloat(ev.target.value);
+      valueEl.innerText = val.toFixed(2);
+      onInput(val);
+    });
+
+    row.addEventListener("mousedown", (e) => e.stopPropagation());
+    row.addEventListener("click", (e) => e.stopPropagation());
+    return row;
+  }
+
+  function populateCombatPanel(panel) {
+    panel.appendChild(
+      createToggleRow({
+        id: "ds-spinner-toggle",
+        label: "Spinner",
+        checked: Boolean(state.isSpinning),
+        onChange: (checked) => {
+          state.isSpinning = checked;
           try {
-            window.extern.inGameNotification(
-              state.isSpinning ? "Spinner: ON" : "Spinner: OFF",
-              0x2b7bb8
-            );
-          } catch (_error) {}
-        }
-      });
-      row1.appendChild(label1);
-      row1.appendChild(cb1);
-      appendRowWithStop(secSpin, row1);
+            window.extern?.inGameNotification?.(checked ? "Spinner: ON" : "Spinner: OFF", 0x2b7bb8);
+          } catch (_) {}
+        },
+      })
+    );
 
-      const row2 = document.createElement("div");
-      row2.className = "diep-row";
-      const label2 = document.createElement("div");
-      label2.className = "diep-label";
-      label2.innerText = `Speed: ${state.spinSpeed.toFixed(2)}`;
-      const slider = document.createElement("input");
-      slider.type = "range";
-      slider.min = "0";
-      slider.max = "2";
-      slider.step = "0.01";
-      slider.value = state.spinSpeed.toString();
-      slider.className = "diep-slider";
-      slider.id = "spin-slider";
-      slider.addEventListener("input", (ev) => {
-        ev.stopPropagation();
-        state.spinSpeed = parseFloat(ev.target.value);
-        label2.innerText = `Speed: ${state.spinSpeed.toFixed(2)}`;
-      });
-      row2.appendChild(label2);
-      row2.appendChild(slider);
-      appendRowWithStop(secSpin, row2);
-    }
+    panel.appendChild(
+      createRangeRow({
+        id: "ds-spin-speed",
+        label: "Spin Speed",
+        min: 0,
+        max: 2,
+        step: 0.01,
+        value: state.spinSpeed,
+        onInput: (val) => {
+          state.spinSpeed = val;
+        },
+      })
+    );
 
-    const secAim = makeSection("aim");
-    {
-      const row1 = document.createElement("div");
-      row1.className = "diep-row";
-      const label1 = document.createElement("div");
-      label1.className = "diep-label";
-      label1.innerText = "Enable Aimbot";
-      const cbA = document.createElement("input");
-      cbA.type = "checkbox";
-      cbA.id = "aimbot-checkbox";
-      cbA.className = "diep-checkbox";
-      cbA.checked = Boolean(state.isAimbotActive);
-      cbA.addEventListener("change", function onAimChange(e) {
-        e.stopPropagation();
-        state.isAimbotActive = this.checked;
-        if (window.extern) {
+    panel.appendChild(
+      createToggleRow({
+        id: "ds-aimbot-toggle",
+        label: "Aimbot",
+        checked: Boolean(state.isAimbotActive),
+        onChange: (checked) => {
+          state.isAimbotActive = checked;
           try {
-            window.extern.inGameNotification(
-              state.isAimbotActive ? "Aimbot: ON" : "Aimbot: OFF",
-              0x2b7bb8
-            );
-          } catch (_error) {}
-        }
-      });
-      row1.appendChild(label1);
-      row1.appendChild(cbA);
-      appendRowWithStop(secAim, row1);
+            window.extern?.inGameNotification?.(checked ? "Aimbot: ON" : "Aimbot: OFF", 0xf533ff);
+          } catch (_) {}
+        },
+      })
+    );
 
-      const row2 = document.createElement("div");
-      row2.className = "diep-row";
-      const label2 = document.createElement("div");
-      label2.className = "diep-label";
-      label2.innerText = "Use Convar Bullet Speed";
-      const cbB = document.createElement("input");
-      cbB.type = "checkbox";
-      cbB.id = "convar-bullet-checkbox";
-      cbB.className = "diep-checkbox";
-      cbB.checked = Boolean(state.useConvarBulletSpeed);
-      cbB.addEventListener("change", function onConvarChange(e) {
-        e.stopPropagation();
-        state.useConvarBulletSpeed = this.checked;
-      });
-      row2.appendChild(label2);
-      row2.appendChild(cbB);
-      appendRowWithStop(secAim, row2);
+    panel.appendChild(
+      createToggleRow({
+        id: "ds-convar-toggle",
+        label: "Use Convar Bullet Speed",
+        checked: Boolean(state.useConvarBulletSpeed),
+        hint: "Reads bullet speed from game stats for prediction.",
+        onChange: (checked) => {
+          state.useConvarBulletSpeed = checked;
+        },
+      })
+    );
 
-      const row3 = document.createElement("div");
-      row3.className = "diep-row";
-      const label3 = document.createElement("div");
-      label3.className = "diep-label";
-      label3.innerText = "Drone Aim-Only";
-      const cbDrone = document.createElement("input");
-      cbDrone.type = "checkbox";
-      cbDrone.id = "drone-aimonly-checkbox";
-      cbDrone.className = "diep-checkbox";
-      cbDrone.checked = Boolean(state.useDroneAimOnlyForMinions);
-      cbDrone.addEventListener("change", function onDroneChange(e) {
-        e.stopPropagation();
-        state.useDroneAimOnlyForMinions = this.checked;
-      });
-      row3.appendChild(label3);
-      row3.appendChild(cbDrone);
-      appendRowWithStop(secAim, row3);
-    }
+    panel.appendChild(
+      createToggleRow({
+        id: "ds-drone-toggle",
+        label: "Drone Aim-Only",
+        checked: Boolean(state.useDroneAimOnlyForMinions),
+        hint: "Keeps minions from firing, only aims for drone classes.",
+        onChange: (checked) => {
+          state.useDroneAimOnlyForMinions = checked;
+        },
+      })
+    );
 
-    const secFarm = makeSection("farm");
-    {
-      const row1 = document.createElement("div");
-      row1.className = "diep-row";
-      const label1 = document.createElement("div");
-      label1.className = "diep-label";
-      label1.innerText = "Enable AutoFarm";
-      const cbF = document.createElement("input");
-      cbF.type = "checkbox";
-      cbF.id = "autofarm-checkbox";
-      cbF.className = "diep-checkbox";
-      cbF.checked = Boolean(state.isAutoFarm);
-      cbF.addEventListener("change", function onFarmChange(e) {
-        e.stopPropagation();
-        state.isAutoFarm = this.checked;
-        if (!state.isAutoFarm) {
-          autofarm.resetAutoAim();
-        }
-        if (window.extern) {
+    panel.appendChild(
+      createToggleRow({
+        id: "ds-bullet-overlay-toggle",
+        label: "Bullet Speed Overlay",
+        checked: Boolean(state.showBulletSpeeds),
+        onChange: (checked) => {
+          state.showBulletSpeeds = checked;
           try {
-            window.extern.inGameNotification(
-              state.isAutoFarm ? "AutoFarm: ON" : "AutoFarm: OFF",
+            window.extern?.inGameNotification?.(
+              checked ? "Bullet Speed Overlay: ON" : "Bullet Speed Overlay: OFF",
               0x2b7bb8
             );
-          } catch (_error) {}
-        }
-      });
-      row1.appendChild(label1);
-      row1.appendChild(cbF);
-      appendRowWithStop(secFarm, row1);
+          } catch (_) {}
+        },
+      })
+    );
+  }
 
-      const row2 = document.createElement("div");
-      row2.className = "diep-row";
-      const label2 = document.createElement("div");
-      label2.className = "diep-label";
-      label2.innerText = "Autofarm on Right-Hold";
-      const cbFH = document.createElement("input");
-      cbFH.type = "checkbox";
-      cbFH.id = "autofarm-hold-checkbox";
-      cbFH.className = "diep-checkbox";
-      cbFH.checked = Boolean(state.autofarmOnRightHold);
-      cbFH.addEventListener("change", function onFarmHoldChange(e) {
-        e.stopPropagation();
-        state.autofarmOnRightHold = this.checked;
-        if (window.extern) {
+  function populateAutoPanel(panel) {
+    panel.appendChild(
+      createToggleRow({
+        id: "ds-autofarm-toggle",
+        label: "AutoFarm",
+        checked: Boolean(state.isAutoFarm),
+        onChange: (checked) => {
+          state.isAutoFarm = checked;
+          if (!checked) autofarm.resetAutoAim();
           try {
-            window.extern.inGameNotification(
-              state.autofarmOnRightHold
-                ? "Autofarm on Right-Hold: ON"
-                : "Autofarm on Right-Hold: OFF",
-              0x2b7bb8
-            );
-          } catch (_error) {}
-        }
-      });
-      row2.appendChild(label2);
-      row2.appendChild(cbFH);
-      appendRowWithStop(secFarm, row2);
+            window.extern?.inGameNotification?.(checked ? "AutoFarm: ON" : "AutoFarm: OFF", 0x2b7bb8);
+          } catch (_) {}
+        },
+      })
+    );
 
-      const priority = document.createElement("div");
-      priority.className = "diep-small";
-      priority.style.marginTop = "6px";
-      priority.innerText = "Priority:";
-      secFarm.appendChild(priority);
-
-      const prioWrap = document.createElement("div");
-      prioWrap.style.display = "flex";
-      prioWrap.style.gap = "6px";
-      prioWrap.style.marginTop = "6px";
-
-      const createPriorityOption = (id, label, value) => {
-        const wrapper = document.createElement("label");
-        wrapper.style.flex = "1";
-        wrapper.style.display = "flex";
-        wrapper.style.alignItems = "center";
-        wrapper.style.gap = "6px";
-        const input = document.createElement("input");
-        input.type = "radio";
-        input.name = "farm-priority";
-        input.id = `farm-priority-${id}`;
-        input.value = value;
-        input.checked = state.farmPriority === value;
-        input.addEventListener("change", (e) => {
-          e.stopPropagation();
-          if (input.checked) state.farmPriority = value;
-        });
-        wrapper.appendChild(input);
-        wrapper.appendChild(document.createTextNode(label));
-        return wrapper;
-      };
-
-      prioWrap.appendChild(createPriorityOption("pentagon", "Pentagon", "pentagon"));
-      prioWrap.appendChild(createPriorityOption("square", "Square", "square"));
-      prioWrap.appendChild(createPriorityOption("triangle", "Triangle", "triangle"));
-      secFarm.appendChild(prioWrap);
-    }
-
-    const secVis = makeSection("visuals");
-    {
-      const row1 = document.createElement("div");
-      row1.className = "diep-row";
-      const label1 = document.createElement("div");
-      label1.className = "diep-label";
-      label1.innerText = "Debug Lines";
-      const cb1 = document.createElement("input");
-      cb1.type = "checkbox";
-      cb1.id = "debug-checkbox";
-      cb1.className = "diep-checkbox";
-      cb1.checked = Boolean(state.isDebug);
-      cb1.addEventListener("change", function onDebugChange(e) {
-        e.stopPropagation();
-        state.isDebug = this.checked;
-        if (window.extern) {
+    panel.appendChild(
+      createToggleRow({
+        id: "ds-autorighthold-toggle",
+        label: "AutoFarm on Right-Hold",
+        checked: Boolean(state.autofarmOnRightHold),
+        onChange: (checked) => {
+          state.autofarmOnRightHold = checked;
           try {
-            window.extern.inGameNotification(
-              state.isDebug ? "Debug Lines: ON" : "Debug Lines: OFF",
+            window.extern?.inGameNotification?.(
+              checked ? "Autofarm on Right-Hold: ON" : "Autofarm on Right-Hold: OFF",
               0x2b7bb8
             );
-          } catch (_error) {}
-        }
-      });
-      row1.appendChild(label1);
-      row1.appendChild(cb1);
-      appendRowWithStop(secVis, row1);
+          } catch (_) {}
+        },
+      })
+    );
+  }
 
-      const row2 = document.createElement("div");
-      row2.className = "diep-row";
-      const label2 = document.createElement("div");
-      label2.className = "diep-label";
-      label2.innerText = "Bullet Speed Overlay";
-      const cb2 = document.createElement("input");
-      cb2.type = "checkbox";
-      cb2.id = "show-bullet-speed-checkbox";
-      cb2.className = "diep-checkbox";
-      cb2.checked = Boolean(state.showBulletSpeeds);
-      cb2.addEventListener("change", function onBulletOverlayChange(e) {
-        e.stopPropagation();
-        state.showBulletSpeeds = this.checked;
-        if (window.extern) {
+  function populateDefensePanel(panel) {
+    panel.appendChild(
+      createToggleRow({
+        id: "ds-debug-toggle",
+        label: "Debug Lines",
+        checked: Boolean(state.isDebug),
+        onChange: (checked) => {
+          state.isDebug = checked;
           try {
-            window.extern.inGameNotification(
-              state.showBulletSpeeds
-                ? "Bullet Speed Overlay: ON"
-                : "Bullet Speed Overlay: OFF",
+            window.extern?.inGameNotification?.(checked ? "Debug Lines: ON" : "Debug Lines: OFF", 0x2b7bb8);
+          } catch (_) {}
+        },
+      })
+    );
+
+    panel.appendChild(
+      createToggleRow({
+        id: "ds-blackbg-toggle",
+        label: "Black Background",
+        checked: Boolean(state.isBlackBg),
+        onChange: (checked) => {
+          state.isBlackBg = checked;
+          try {
+            window.input?.set_convar?.("ren_background_color", checked ? "#000000" : "#CDCDCD");
+            window.extern?.inGameNotification?.(
+              checked ? "Black background: ON" : "Black background: OFF",
               0x2b7bb8
             );
-          } catch (_error) {}
-        }
-      });
-      row2.appendChild(label2);
-      row2.appendChild(cb2);
-      appendRowWithStop(secVis, row2);
+          } catch (_) {}
+        },
+      })
+    );
+  }
 
-      const row3 = document.createElement("div");
-      row3.className = "diep-row";
-      const label3 = document.createElement("div");
-      label3.className = "diep-label";
-      label3.innerText = "Black Background";
-      const cb3 = document.createElement("input");
-      cb3.type = "checkbox";
-      cb3.id = "blackbg-checkbox";
-      cb3.className = "diep-checkbox";
-      cb3.checked = Boolean(state.isBlackBg);
-      cb3.addEventListener("change", function onBlackBgChange(e) {
-        e.stopPropagation();
-        state.isBlackBg = this.checked;
-        try {
-          if (window.input && typeof window.input.set_convar === "function") {
-            window.input.set_convar(
-              "ren_background_color",
-              state.isBlackBg ? "#000000" : "#CDCDCD"
-            );
-          }
-          if (window.extern) {
-            window.extern.inGameNotification(
-              state.isBlackBg ? "Black background: ON" : "Black background: OFF",
-              0x2b7bb8
-            );
-          }
-        } catch (_error) {}
-      });
-      row3.appendChild(label3);
-      row3.appendChild(cb3);
-      appendRowWithStop(secVis, row3);
-    }
+  function populateExtrasPanel(panel) {
+    const buildBlock = document.createElement("div");
+    buildBlock.className = "ds-build-block";
 
-    const secBuilds = makeSection("builds");
-    {
-      // Predefined upgrade strings – mirrors the original script’s build list.
-      const presets = [
-        { name: "rocketeer", build: "565656565656567878787878787822333" },
-        { name: "skimmer", build: "565656565656484848484848487777777" },
-        { name: "factory", build: "565656565656564848484848484777777" },
-        { name: "spike", build: "5656565656565677744487777888222222222233333333338888888888111" },
-        { name: "autosmasher", build: "5656565656565677744487777888222222222233333333338888888888111" },
-        { name: "annihilator", build: "565656565656484848484848487777777" },
-        { name: "battleship", build: "565656565656564848484848447777777" },
-        { name: "autotrapper", build: "565656565656564444848877787878787" },
-        { name: "streamliner", build: "565656565656564444488888878777777" },
-        { name: "spreadshot", build: "565656565656567878787878787843242" },
-        { name: "auto5", build: "565656565656567847847847847847878" },
-        { name: "autogunner", build: "565656565656567847847847847847878" },
-        { name: "landmine", build: "5656565656565677744487777888222222222233333333338888888888111" },
-        { name: "tritrap", build: "565656565656564444888777787878787" },
-        { name: "combattrap", build: "565656565656564444888777787878787" },
-        { name: "booster", build: "565656565656567878788888888422222" },
-        { name: "fighter", build: "565656565656567878788888888422222" },
-        { name: "overseer", build: "565656565656565656565656567878787" },
-        { name: "overlord", build: "565656565656565656565656567878787" },
-      ];
+    const buildSelect = document.createElement("select");
+    buildSelect.id = "ds-build-select";
+    buildSelect.className = "ds-select";
+    buildSelect.addEventListener("mousedown", (e) => e.stopPropagation());
+    buildSelect.addEventListener("click", (e) => e.stopPropagation());
+    [
+      { name: "rocketeer", build: "565656565656567878787878787822333" },
+      { name: "skimmer", build: "565656565656484848484848487777777" },
+      { name: "factory", build: "565656565656564848484848484777777" },
+      { name: "spike", build: "5656565656565677744487777888222222222233333333338888888888111" },
+      { name: "autosmasher", build: "5656565656565677744487777888222222222233333333338888888888111" },
+      { name: "annihilator", build: "565656565656484848484848487777777" },
+      { name: "battleship", build: "565656565656564848484848447777777" },
+      { name: "autotrapper", build: "565656565656564444848877787878787" },
+      { name: "streamliner", build: "565656565656564444488888878777777" },
+      { name: "spreadshot", build: "565656565656567878787878787843242" },
+      { name: "auto5", build: "565656565656567847847847847847878" },
+      { name: "autogunner", build: "565656565656567847847847847847878" },
+      { name: "landmine", build: "5656565656565677744487777888222222222233333333338888888888111" },
+      { name: "tritrap", build: "565656565656564444888777787878787" },
+      { name: "combattrap", build: "565656565656564444888777787878787" },
+      { name: "booster", build: "565656565656567878788888888422222" },
+      { name: "fighter", build: "565656565656567878788888888422222" },
+      { name: "overseer", build: "565656565656565656565656567878787" },
+      { name: "overlord", build: "565656565656565656565656567878787" },
+    ].forEach((preset) => {
+      const option = document.createElement("option");
+      option.value = preset.build;
+      option.innerText = preset.name;
+      buildSelect.appendChild(option);
+    });
+    buildBlock.appendChild(buildSelect);
 
-      const buildSelect = document.createElement("select");
-      buildSelect.id = "builds-select";
-      buildSelect.className = "diep-select";
-      buildSelect.addEventListener("mousedown", (e) => {
-        e.stopPropagation();
-        buildSelect.focus();
-      });
-      presets.forEach((preset) => {
-        const option = document.createElement("option");
-        option.value = preset.build;
-        option.innerText = preset.name;
-        buildSelect.appendChild(option);
-      });
-      secBuilds.appendChild(buildSelect);
+    const applyButton = document.createElement("button");
+    applyButton.className = "ds-button";
+    applyButton.type = "button";
+    applyButton.innerText = "Apply Build";
+    buildBlock.appendChild(applyButton);
 
-      const applyRow = document.createElement("div");
-      applyRow.className = "diep-row";
-      const applyBtn = document.createElement("button");
-      applyBtn.className = "diep-button";
-      applyBtn.innerText = "Apply Build";
-      applyBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        applySelectedBuild();
-      });
-      applyRow.appendChild(applyBtn);
-      appendRowWithStop(secBuilds, applyRow);
+    const autoApplyRow = createToggleRow({
+      id: "ds-autobuild-toggle",
+      label: "Auto-Apply Build",
+      checked: false,
+      hint: "Attempts to reapply your selected build every few seconds.",
+      onChange: () => {},
+    });
 
-      const autoRow = document.createElement("div");
-      autoRow.className = "diep-row";
-      const labelAuto = document.createElement("div");
-      labelAuto.className = "diep-label";
-      labelAuto.innerText = "Auto-Apply Build";
-      const cbAuto = document.createElement("input");
-      cbAuto.type = "checkbox";
-      cbAuto.id = "autobuild-checkbox";
-      cbAuto.className = "diep-checkbox";
-      cbAuto.checked = false;
-      autoRow.appendChild(labelAuto);
-      autoRow.appendChild(cbAuto);
-      appendRowWithStop(secBuilds, autoRow);
+    panel.appendChild(buildBlock);
+    panel.appendChild(autoApplyRow);
 
-      const info = document.createElement("div");
-      info.className = "diep-small";
-      info.innerText =
-        "Auto-Apply will attempt to set your build repeatedly while enabled.";
-      info.addEventListener("mousedown", (e) => e.stopPropagation());
-      secBuilds.appendChild(info);
+    const info = document.createElement("div");
+    info.className = "ds-info";
+    info.innerHTML =
+      "<strong>Swan RC</strong><br>Diep-styled control panel. Keys: U = aimbot, I = stack, M = toggle menu.";
+    panel.appendChild(info);
 
-      let autobuildInterval = null;
-      function tryExecuteBuildCommand(buildString) {
+    // Implementation helpers
+    let autobuildInterval = null;
+    const startAutoBuild = () => {
+      if (autobuildInterval) return;
+      autobuildInterval = setInterval(() => {
+        const build = buildSelect.value;
+        if (!build) return;
+        applyBuild(build);
+      }, 2500);
+    };
+    const stopAutoBuild = () => {
+      if (!autobuildInterval) return;
+      clearInterval(autobuildInterval);
+      autobuildInterval = null;
+    };
+
+    const applyBuild = (buildString) => {
+      const tryExecute = () => {
         try {
           if (window.input && typeof window.input.execute === "function") {
             window.input.execute(`game_stats_build ${buildString}`);
             return true;
           }
-        } catch (_error) {}
+        } catch (_) {}
         try {
           if (window.extern && typeof window.extern.execute === "function") {
             window.extern.execute(`game_stats_build ${buildString}`);
             return true;
           }
-        } catch (_error) {}
+        } catch (_) {}
         try {
           if (window.input && typeof window.input.set_convar === "function") {
             window.input.set_convar("game_stats_build", buildString);
             return true;
           }
-        } catch (_error) {}
+        } catch (_) {}
         return false;
+      };
+
+      const ok = tryExecute();
+      if (!ok) {
+        try {
+          window.extern?.inGameNotification?.("Failed to apply build (no executor found)", 0xff5e5e);
+        } catch (_) {}
+      } else {
+        try {
+          window.extern?.inGameNotification?.("Applied build", 0x2b7bb8);
+        } catch (_) {}
       }
-      function applySelectedBuild() {
+    };
+
+    applyButton.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const build = buildSelect.value;
+      if (build) applyBuild(build);
+    });
+
+    const autoToggle = autoApplyRow.querySelector("input[type=checkbox]");
+    autoToggle.addEventListener("change", (ev) => {
+      ev.stopPropagation();
+      if (ev.target.checked) startAutoBuild();
+      else stopAutoBuild();
+    });
+
+    // keep API parity with previous version
+    const menuContainer = panel.parentElement?.parentElement?.parentElement;
+    if (menuContainer) {
+      menuContainer.applySelectedBuild = () => {
         const build = buildSelect.value;
-        if (!build) return;
-        const ok = tryExecuteBuildCommand(build);
-        if (!ok && window.extern) {
-          try {
-            window.extern.inGameNotification(
-              "Failed to apply build (no executor found)",
-              0xff5e5e
-            );
-          } catch (_error) {}
-        } else if (window.extern) {
-          try {
-            window.extern.inGameNotification("Applied build", 0x2b7bb8);
-          } catch (_error) {}
-        }
-      }
-      function startAutoBuild() {
-        if (autobuildInterval) return;
-        autobuildInterval = setInterval(() => {
-          const build = buildSelect.value;
-          if (!build) return;
-          tryExecuteBuildCommand(build);
-        }, 2500);
-      }
-      function stopAutoBuild() {
-        if (!autobuildInterval) return;
-        clearInterval(autobuildInterval);
-        autobuildInterval = null;
-      }
-
-      cbAuto.addEventListener("change", function (e) {
-        e.stopPropagation();
-        if (this.checked) startAutoBuild();
-        else stopAutoBuild();
-      });
-
-      container.applySelectedBuild = applySelectedBuild;
+        if (build) applyBuild(build);
+      };
     }
-
-    const secInfo = makeSection("info");
-    {
-      const infoText = document.createElement("div");
-      infoText.className = "diep-small";
-      infoText.style.whiteSpace = "normal";
-      infoText.style.lineHeight = "1.3";
-      infoText.innerHTML =
-        "<strong>Swan RC</strong><br>Diep-styled control panel. Keys: U = aimbot, I = stack, M = toggle menu.";
-      infoText.addEventListener("mousedown", (e) => e.stopPropagation());
-      secInfo.appendChild(infoText);
-    }
-
-    const footer = document.createElement("div");
-    footer.className = "diep-footer";
-    footer.textContent = "Swan RC";
-
-    container.appendChild(header);
-    container.appendChild(body);
-    container.appendChild(footer);
-
-    document.body.appendChild(container);
-    container.style.display = "none";
-
-    function switchTab(id) {
-      Object.keys(sections).forEach((key) => {
-        sections[key].classList.toggle("active", key === id);
-      });
-      Object.keys(tabButtons).forEach((key) => {
-        tabButtons[key].classList.toggle("active", key === id);
-      });
-    }
-
-    (function makeDraggable(target, handle) {
-      let dragging = false;
-      let offsetX = 0;
-      let offsetY = 0;
-      handle.addEventListener("mousedown", (e) => {
-        e.stopPropagation();
-        dragging = true;
-        const rect = target.getBoundingClientRect();
-        offsetX = e.clientX - rect.left;
-        offsetY = e.clientY - rect.top;
-        document.addEventListener("mousemove", onMove);
-        document.addEventListener("mouseup", onUp);
-        e.preventDefault();
-      });
-      function onMove(e) {
-        if (!dragging) return;
-        target.style.left = `${e.clientX - offsetX}px`;
-        target.style.top = `${e.clientY - offsetY}px`;
-      }
-      function onUp() {
-        dragging = false;
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
-      }
-    })(container, header);
-
-    try {
-      document.getElementById("spinner-checkbox").checked = Boolean(state.isSpinning);
-      document.getElementById("spin-slider").value = state.spinSpeed;
-      document.getElementById("aimbot-checkbox").checked = Boolean(state.isAimbotActive);
-      document.getElementById("convar-bullet-checkbox").checked = Boolean(
-        state.useConvarBulletSpeed
-      );
-      document.getElementById("drone-aimonly-checkbox").checked = Boolean(
-        state.useDroneAimOnlyForMinions
-      );
-      document.getElementById("autofarm-checkbox").checked = Boolean(state.isAutoFarm);
-      document.getElementById("autofarm-hold-checkbox").checked = Boolean(
-        state.autofarmOnRightHold
-      );
-      document.getElementById("show-bullet-speed-checkbox").checked = Boolean(
-        state.showBulletSpeeds
-      );
-      document.getElementById("debug-checkbox").checked = Boolean(state.isDebug);
-      document.getElementById("blackbg-checkbox").checked = Boolean(state.isBlackBg);
-    } catch (_error) {}
-
-    state.menuContainer = container;
   }
 
   return {

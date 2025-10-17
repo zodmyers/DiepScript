@@ -44,30 +44,30 @@ DiepScript.define("hooks/input", (require) => {
       } catch (error) {
         if (state.isDebug) console.warn("[DiepScript] mouse fire up failed:", error);
       }
-    } else if (ev.button === 2) {
-      state.rightMouseDown = false;
-      if (state.mouseLocked) {
-        state.mouseLocked = false;
+  } else if (ev.button === 2) {
+    state.rightMouseDown = false;
+    if (state.mouseLocked) {
+      state.mouseLocked = false;
+      try {
+        aimbot.ensureDroneAimOnlyState();
+        if (window.extern && typeof window.extern.onTouchMove === "function") {
+          window.extern.onTouchMove(-1, state.mouseX, state.mouseY, true);
+        }
+      } catch (error) {
+        if (state.isDebug) console.warn("[DiepScript] right mouse release move failed:", error);
+      }
+      setTimeout(() => {
         try {
-          aimbot.ensureDroneAimOnlyState();
-          if (window.extern && typeof window.extern.onTouchMove === "function") {
-            window.extern.onTouchMove(-1, state.mouseX, state.mouseY, true);
+          if (window.extern && typeof window.extern.onKeyUp === "function") {
+            window.extern.onKeyUp(36);
           }
         } catch (error) {
-          if (state.isDebug) console.warn("[DiepScript] right mouse release move failed:", error);
+          if (state.isDebug) console.warn("[DiepScript] right mouse release fire up failed:", error);
         }
-        setTimeout(() => {
-          try {
-            if (window.extern && typeof window.extern.onKeyUp === "function") {
-              window.extern.onKeyUp(36);
-            }
-          } catch (error) {
-            if (state.isDebug) console.warn("[DiepScript] right mouse release fire up failed:", error);
-          }
-        }, 80);
-      }
+      }, 80);
     }
   }
+}
 
   function handleContextMenu(ev) {
     // ev.preventDefault(); // Uncomment to block the context menu during right-click aiming
@@ -97,7 +97,7 @@ DiepScript.define("hooks/input", (require) => {
 
   // Keyboard shortcuts mirror the original script (toggle aimbot/stack/menu).
   function handleGlobalKeydown(ev) {
-    if (ev.code === constants.KeyBindings.toggleAimbot) {
+  if (ev.code === constants.KeyBindings.toggleAimbot) {
       state.isAimbotActive = !state.isAimbotActive;
       if (
         window.__common__ &&
@@ -133,11 +133,18 @@ DiepScript.define("hooks/input", (require) => {
           if (state.isDebug) console.warn("[DiepScript] notify stack failed:", error);
         }
       }
-    } else if (ev.code === constants.KeyBindings.toggleMenu && state.menuContainer) {
-      const hidden = state.menuContainer.style.display === "none";
-      state.menuContainer.style.display = hidden ? "block" : "none";
+  } else if (ev.code === constants.KeyBindings.toggleMenu && state.menuContainer) {
+      const menu = state.menuContainer;
+      const isOpen = menu.classList.contains("active");
+      if (isOpen) {
+        if (typeof menu.__hide === "function") menu.__hide();
+        else menu.style.display = "none";
+      } else {
+        if (typeof menu.__show === "function") menu.__show();
+        else menu.style.display = "block";
+      }
     }
-  }
+}
 
   function handleSpaceKeydown(ev) {
     if (ev.code === "Space" || ev.keyCode === 32) {
