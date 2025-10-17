@@ -649,7 +649,7 @@ DiepScript.define("ui/menu", (require) => {
     // Footer
     const footer = document.createElement("div");
     footer.className = "footer";
-    footer.textContent = "Swan RC";
+    footer.textContent = "Sawan RC";
 
     container.appendChild(sectionWrap);
     container.appendChild(footer);
