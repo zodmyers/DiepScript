@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DiepScript Modular Menu
 // @namespace    https://github.com/zodmyers/DiepScript
-// @version      3.0.0
+// @version      3.1.0
 // @description  Modular rewrite of Menu v2 with organized features, aimbot, autofarm, and visuals for diep.io.
 // @author       Dreamy (original), refactored by project contributors
 // @match        https://diep.io/*
@@ -10,7 +10,7 @@
 // @run-at       document-start
 // @grant        none
 // @license      MIT
-// @require      https://raw.githubusercontent.com/zodmyers/DiepScript/NewVersionTest/dist/diepScript.bundle.js
+// @require      https://raw.githubusercontent.com/zodmyers/DiepScript/main/dist/diepScript.bundle.js
 // ==/UserScript==
 
 (function bootstrapDiepScript() {

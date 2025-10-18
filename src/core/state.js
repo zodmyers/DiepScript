@@ -15,7 +15,7 @@ DiepScript.define("core/state", (require) => {
     spinAngle: 0,
     isShooting: false,
     isFiring: false,
-    isAimbotActive: false,
+    isAimbotActive: true,
 
     // Player data
     playerTank: "Tank",
@@ -59,8 +59,8 @@ DiepScript.define("core/state", (require) => {
     showBulletSpeeds: false,
     bulletPositions: [],
     currentComputedBulletSpeed: null,
-    useDroneAimOnlyForMinions: true,
-    autofarmOnRightHold: false,
+    useDroneAimOnlyForMinions: false,
+    autofarmOnRightHold: true,
 
     // Misc runtime
     forcingU: false,
@@ -73,8 +73,6 @@ DiepScript.define("core/state", (require) => {
 
     // Menu + UI
     menuContainer: null,
-    isBlackBg: false,
-    blackBgDiv: null,
 
     // Canvas hook helpers
     ctxTransform: null,

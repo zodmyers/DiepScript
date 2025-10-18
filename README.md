@@ -46,197 +46,70 @@ This overwrites `dist/diepScript.bundle.js` with the latest module code. Commit 
 
 If you need to extend functionality, add a module under `src/features/` (or `src/runtime/` if it’s lifecycle-related), register it through the loader, then reference it in `tampermonkey/TamperScript.user.js`. This keeps the project scalable while staying friendly for Tampermonkey distribution. Enjoy! 💻🎯
 
+Aim Prediction Foluma:
 
-New Version Menu:
 
-GM_addStyle(
-    `.main-div {
-    position: absolute;
-    top: 50%;
-    margin-top: -225px;
-    left: 50%;
-    margin-left: -200px;
-    width: 0px;
-    height: 0px;
-    overflow: hidden;
-    background-color: rgba(19, 18, 18, 0.95);
-    font-family: "Kanit", sans-serif;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    color: rgb(212, 209, 209);
-    z-index: 1000;
-    border-style: solid;
-    border-radius: 5%;
-    animation: close 0.95s ease-in-out forwards;
-  }
-
-  .main-div.active {
-    width: 400px;
-    height: 450px;
-    transform-origin: 200px 225px;
-    z-index: 1000;
-    animation: open 0.95s ease-in-out forwards;
-  }
-
-  .main-title {
-    margin-bottom: 3rem;
-  }
-
-  .main-title .bottom {
-    font-size: 5rem;
-    position: relative;
-  }
-
-  .main-title span {
-    font-size: 3rem;
-    display: block;
-    letter-spacing: 0.5rem;
-    transform: translate(-30px, 30px);
-  }
-
-  /* menu */
-
-  .menu button {
-    color: rgb(190, 184, 184);
-    display: block;
-    position: relative;
-    font-size: 2rem;
-    text-transform: uppercase;
-    background-color: transparent;
-    border: none;
-    cursor: pointer;
-    overflow: hidden;
-    width: 100%;
-    height: 100%;
-    margin-bottom: 1rem;
-  }
-
-  .menu button:hover {
-    transform: scale(1.05);
-    color: white;
-  }
-
-  .menu button::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    border-bottom: 1px solid white;
-    transform: scale(0, 1);
-    transition: transform 250ms ease-out;
-  }
-
-  .menu button:hover::before {
-    transform: scale(1, 1);
-  }
-
-  @keyframes open {
-    0% {
-      width: 0px;
-      height: 0px;
-      border-width: 10px;
-      border-radius: 2%;
-    }
-    25% {
-      width: 400px;
-      height: 0px;
-    }
-    65% {
-      border-radius: 5%;
-    }
-    100% {
-      height: 450px;
-      border-width: 10px;
-      border-radius: 50% 20% / 10% 40%;
-    }
-  }
-
-  @keyframes close {
-    0% {
-      width: 400px;
-      height: 450px;
-      border-width: 10px;
-      border-radius: 50% 20% / 10% 40%;
-    }
-    45% {
-      width: 400px;
-      height: 0px;
-      border-radius: 10%;
-    }
-    70% {
-      width: 0px;
-    }
-    100% {
-      border-width: 0px;
-      width: 0px;
-      height: 0px;
-
-    }
-  }
-  `
-);
-/* ============menu toggle stuff=============== */
-let menuOpt = {
-    class: "main-div",
-    keyToggle: "Escape",
-};
-
-window.addEventListener("keydown", (e) => {
-    if (e.key == menuOpt.keyToggle) {
-        let menu = document.querySelector(`.${menuOpt.class}`);
-        menu.classList.toggle('active');
-        console.log('test');
-        // if (menu) menu.parentNode.removeChild(menu);
-        // else openMenu();
-    }
-});
-
-/* create menu to display */
-let menuCreate = document.createElement("div");
-menuCreate.className = menuOpt.class;
-menuCreate.innerHTML = `
-  <div class="main-title">
-    <span>System</span>
-    <div class="bottom">Settings</div>
-  </div>
-
-  <div class="combat menu">
-    <button>Combat</button>
-    <!-- <div class="options">
-      <div id="instakill">Instakill</div>
-      <div class="bull-spam">Bull Spam</div>
-      <div class="combat-click">Click</div>
-      change to macros when there is more than one
-      <div id="combat-zoom">Combat Zoom</div>
-    </div> -->
-  </div>
-
-  <div class="defense menu">
-    <button>Defense</button>
-    <!-- <div class="options"></div> -->
-  </div>
-
-  <div class="auto menu">
-    <button>Auto</button>
-  </div>
-  <div class="extra menu">
-    <button>Extras</button>
-  </div>
-</div>
-
-`;
-document.body.appendChild(menuCreate);
-menuOptions();
-
-function menuOptions() {
-    const menuBtns = document.querySelectorAll(".menu");
-    menuBtns.forEach((btn) => btn.addEventListener("click", () => displaySelection(btn)));
+1) Aimbot
+This is the one script I don't want to give away, because it'd make the game unfair. That said, here's the function i use to predict movement, for informational purposes:
+function intercept(src, dst, v) {
+	var tx = dst.x - src.x,
+		ty = dst.y - src.y,
+		tvx = dst.vx,
+		tvy = dst.vy;
+ 
+	// Get quadratic equation components
+	var a = tvx * tvx + tvy * tvy - v * v;
+	var b = 2 * (tvx * tx + tvy * ty);
+	var c = tx * tx + ty * ty;
+ 
+	// Solve quadratic
+	var ts = quad(a, b, c); // See quad(), below
+ 
+	// Find smallest positive solution
+	var sol = null;
+	if (ts) {
+		var t0 = ts[0],
+			t1 = ts[1];
+		var t = Math.min(t0, t1);
+		if (t < 0) t = Math.max(t0, t1);
+		if (t > 0) {
+			sol = {
+				x: dst.x + dst.vx * t,
+				y: dst.y + dst.vy * t
+			};
+		}
+	}
+ 
+	return sol;
 }
-
-function displaySelection(ele) {
-    console.log(ele);
+function quad(a, b, c) {
+	var sol = null;
+	if (Math.abs(a) < 1e-6) {
+		if (Math.abs(b) < 1e-6) {
+			sol = Math.abs(c) < 1e-6 ? [0, 0] : null;
+		} else {
+			sol = [-c / b, -c / b];
+		}
+	} else {
+		var disc = b * b - 4 * a * c;
+		if (disc >= 0) {
+			disc = Math.sqrt(disc);
+			a = 2 * a;
+			sol = [(-b - disc) / a, (-b + disc) / a];
+		}
+	}
+	return sol;
 }
+ 
+Use the above like:
+ 
+let t = intercept({
+    x: mainCircle.x,
+    y: mainCircle.y
+}, {
+    x: target.x,
+    y: target.y,
+    vx: avgXV - myXV,
+    vy: avgYV - myYV
+}, bulletSpeed);
+t will have the x and y you should aim at (use Math.atan2)
