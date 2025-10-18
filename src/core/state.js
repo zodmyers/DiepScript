@@ -61,6 +61,7 @@ DiepScript.define("core/state", (require) => {
     currentComputedBulletSpeed: null,
     useDroneAimOnlyForMinions: false,
     autofarmOnRightHold: true,
+    lastAimDebug: null,
 
     // Misc runtime
     forcingU: false,

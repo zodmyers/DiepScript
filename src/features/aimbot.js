@@ -186,6 +186,7 @@ DiepScript.define("features/aimbot", (require) => {
       (!state.isAimbotActive && !force) ||
       !isAimbotTriggerActive()
     ) {
+      state.lastAimDebug = null;
       unlockMouse();
       return;
     }
@@ -209,6 +210,7 @@ DiepScript.define("features/aimbot", (require) => {
         dist: math.getDistance(state.playerX, state.playerY, aimWorldX, aimWorldY),
         vx,
         vy,
+        weight: 0,
       };
     } else {
       const shooter = { x: state.playerX, y: state.playerY };
@@ -233,7 +235,7 @@ DiepScript.define("features/aimbot", (require) => {
       aimWorldX = blend.x;
       aimWorldY = blend.y;
       state.prevAimWorld = { x: aimWorldX, y: aimWorldY };
-      debugInfo = blend.debug;
+      debugInfo = { ...blend.debug, weight: blend.weight };
     }
 
     if (
@@ -242,6 +244,17 @@ DiepScript.define("features/aimbot", (require) => {
       (debugInfo.dist < 1500 || Math.random() < 0.002)
     ) {
       console.log("[DiepScript][AIM BLEND]", debugInfo);
+    }
+
+    if (debugInfo) {
+      state.lastAimDebug = {
+        ...debugInfo,
+        timestamp: performance.now(),
+        targetName: target.name || "",
+        targetScore: target.score || 0,
+      };
+    } else {
+      state.lastAimDebug = null;
     }
 
     const [screenX, screenY] = coordinates.worldToMousePosition(

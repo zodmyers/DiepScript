@@ -96,6 +96,7 @@ DiepScript.define("runtime/gameLoop", (require) => {
     playersRuntime.updatePlayersFromRender();
     playersRuntime.matchPlayers();
     drawPlayerDebugLines();
+    visuals.renderCoordinateOverlay();
     stats.forceU();
 
     if (aimbot.isAimbotTriggerActive() && state.autofarmOnRightHold) {

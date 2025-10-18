@@ -81,32 +81,13 @@ DiepScript.define("runtime/players", (require) => {
         radius: shape.radius,
         name,
         score,
-        velocity: undefined,
+        velocity: [0, 0],
+        acceleration: [0, 0],
+        motionSamples: 0,
+        accelSamples: 0,
         teammate,
       });
     }
-  }
-
-  function getVelocity(positionTable) {
-    let sumX = 0;
-    let sumY = 0;
-    let samples = 0;
-
-    for (let i = 1; i < positionTable.length; i += 1) {
-      const current = positionTable[i];
-      const prev = positionTable[i - 1];
-      if (!current || !prev) continue;
-
-      const dx = current.x - prev.x;
-      const dy = current.y - prev.y;
-      const dt = current.timestamp - prev.timestamp;
-      if (dt < 6) continue;
-      sumX += dx / dt;
-      sumY += dy / dt;
-      samples += 1;
-    }
-
-    return samples > 0 ? [sumX / samples, sumY / samples] : [0, 0];
   }
 
   // Attempt to match the freshly parsed players to the previous frame to preserve velocity history.
@@ -146,9 +127,17 @@ DiepScript.define("runtime/players", (require) => {
 
         current.teammate = last.teammate || current.teammate;
         current.positionTable = history;
-        current.velocity = getVelocity(history);
+        const motion = math.getMotionEstimate(history);
+        current.velocity = [motion.vx || 0, motion.vy || 0];
+        current.acceleration = [motion.ax || 0, motion.ay || 0];
+        current.motionSamples = motion.velocitySamples || 0;
+        current.accelSamples = motion.accelSamples || 0;
       } else {
         current.positionTable = Array.from({ length: maxHistory }, () => null);
+        current.velocity = [0, 0];
+        current.acceleration = [0, 0];
+        current.motionSamples = 0;
+        current.accelSamples = 0;
       }
 
       if (!isTeamMode()) {
