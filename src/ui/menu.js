@@ -374,7 +374,7 @@ DiepScript.define("ui/menu", (require) => {
       const rmbInfo = document.createElement("div");
       rmbInfo.className = "small";
       rmbInfo.style.marginTop = "6px";
-      rmbinfo.innerText = "Hold RMB to engage the aimbot when this option is enabled.";
+      rmbInfo.innerText = "Hold RMB to engage the aimbot when this option is enabled.";
       rmbInfo.addEventListener("mousedown", (e) => e.stopPropagation());
       secFarm.appendChild(rmbInfo);
 
