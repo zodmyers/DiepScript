@@ -11,6 +11,79 @@ DiepScript.define("core/math", () => {
     return [player.wx + timeMs * vx, player.wy + timeMs * vy];
   }
 
+  function getMotionEstimate(positionTable, dtThreshold = 6) {
+    const history = Array.isArray(positionTable)
+      ? positionTable.filter(
+          (entry) =>
+            entry &&
+            Number.isFinite(entry.x) &&
+            Number.isFinite(entry.y) &&
+            Number.isFinite(entry.timestamp)
+        )
+      : [];
+
+    let sumVx = 0;
+    let sumVy = 0;
+    let sumAx = 0;
+    let sumAy = 0;
+    let velocitySamples = 0;
+    let accelSamples = 0;
+    let prevSample = null;
+    let prevVelocity = null;
+
+    for (let i = 0; i < history.length; i += 1) {
+      const sample = history[i];
+      if (!prevSample) {
+        prevSample = sample;
+        continue;
+      }
+
+      const dt = sample.timestamp - prevSample.timestamp;
+      if (dt >= dtThreshold) {
+        const vx = (sample.x - prevSample.x) / dt;
+        const vy = (sample.y - prevSample.y) / dt;
+        sumVx += vx;
+        sumVy += vy;
+        velocitySamples += 1;
+
+        if (prevVelocity) {
+          const dvx = vx - prevVelocity.vx;
+          const dvy = vy - prevVelocity.vy;
+          const dtVel = sample.timestamp - prevVelocity.timestamp;
+          if (dtVel >= dtThreshold) {
+            sumAx += dvx / dtVel;
+            sumAy += dvy / dtVel;
+            accelSamples += 1;
+          }
+        }
+
+        prevVelocity = { vx, vy, timestamp: sample.timestamp };
+      }
+
+      prevSample = sample;
+    }
+
+    const clamp = (value, max) => {
+      if (value > max) return max;
+      if (value < -max) return -max;
+      return value;
+    };
+
+    const avgVx = velocitySamples > 0 ? sumVx / velocitySamples : 0;
+    const avgVy = velocitySamples > 0 ? sumVy / velocitySamples : 0;
+    const avgAx = accelSamples > 0 ? clamp(sumAx / accelSamples, 0.005) : 0;
+    const avgAy = accelSamples > 0 ? clamp(sumAy / accelSamples, 0.005) : 0;
+
+    return {
+      vx: avgVx,
+      vy: avgVy,
+      ax: avgAx,
+      ay: avgAy,
+      velocitySamples,
+      accelSamples,
+    };
+  }
+
   function getAverage(points) {
     if (!points || points.length === 0) return [0, 0];
     let sumX = 0;
@@ -96,14 +169,15 @@ DiepScript.define("core/math", () => {
 
     const dist = getDistance(shooter.x, shooter.y, target.wx, target.wy);
 
-    const sampleCount = (target.positionTable || []).filter(Boolean).length;
+    const motion = getMotionEstimate(target.positionTable || []);
+    const velocitySampleCount = motion.velocitySamples;
     const rawTvx =
-      target.velocity && sampleCount >= minSamples
-        ? target.velocity[0] || 0
+      velocitySampleCount >= minSamples
+        ? motion.vx || 0
         : 0;
     const rawTvy =
-      target.velocity && sampleCount >= minSamples
-        ? target.velocity[1] || 0
+      velocitySampleCount >= minSamples
+        ? motion.vy || 0
         : 0;
 
     const fbTime = Math.max(
@@ -111,12 +185,25 @@ DiepScript.define("core/math", () => {
       Math.min(400, dist / Math.max(1e-6, bulletSpeed))
     );
     const linearPred = {
-      x: target.wx + rawTvx * fbTime,
-      y: target.wy + rawTvy * fbTime,
+      x:
+        target.wx +
+        rawTvx * fbTime +
+        (motion.accelSamples > 0 ? 0.5 * motion.ax * fbTime * fbTime : 0),
+      y:
+        target.wy +
+        rawTvy * fbTime +
+        (motion.accelSamples > 0 ? 0.5 * motion.ay * fbTime * fbTime : 0),
     };
 
-    const relVx = (rawTvx || 0) - (shooterVel[0] || 0);
-    const relVy = (rawTvy || 0) - (shooterVel[1] || 0);
+    const accelAdjustedVx =
+      rawTvx +
+      (motion.accelSamples > 0 ? motion.ax * fbTime * 0.5 : 0);
+    const accelAdjustedVy =
+      rawTvy +
+      (motion.accelSamples > 0 ? motion.ay * fbTime * 0.5 : 0);
+
+    const relVx = accelAdjustedVx - (shooterVel[0] || 0);
+    const relVy = accelAdjustedVy - (shooterVel[1] || 0);
     const interceptSolution = intercept(
       shooter,
       { x: target.wx, y: target.wy, vx: relVx, vy: relVy },
@@ -128,7 +215,13 @@ DiepScript.define("core/math", () => {
     const sVelSamples =
       velSampleRange <= 0
         ? 1
-        : Math.max(0, Math.min(1, (sampleCount - minSamples) / velSampleRange));
+        : Math.max(
+            0,
+            Math.min(
+              1,
+              (velocitySampleCount - minSamples) / velSampleRange
+            )
+          );
 
     let sSolT = 0;
     let sAngle = 0;
@@ -198,13 +291,25 @@ DiepScript.define("core/math", () => {
       weight,
       debug: {
         dist,
-        sampleCount,
+        sampleCount: velocitySampleCount,
         intercept: interceptSolution,
         sDist,
         sVelSamples,
         sSolT,
         sAngle,
         sRelSpeed,
+        motion: {
+          velocity: {
+            x: rawTvx,
+            y: rawTvy,
+            samples: velocitySampleCount,
+          },
+          acceleration: {
+            x: motion.ax,
+            y: motion.ay,
+            samples: motion.accelSamples,
+          },
+        },
       },
     };
   }
@@ -215,6 +320,7 @@ DiepScript.define("core/math", () => {
     getAverage,
     quad,
     intercept,
+    getMotionEstimate,
     blendPredictiveAim,
   };
 });

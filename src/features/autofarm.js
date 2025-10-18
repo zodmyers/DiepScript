@@ -71,7 +71,7 @@ DiepScript.define("features/autofarm", (require) => {
       triangle: state.neutralTriangles,
     };
 
-    const baseOrder = ["pentagon", "square", "triangle"];
+    const baseOrder = ["pentagon", "triangle", "square"];
     const ordered = [state.farmPriority, ...baseOrder.filter((type) => type !== state.farmPriority)];
 
     for (const type of ordered) {

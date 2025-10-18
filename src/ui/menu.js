@@ -37,7 +37,9 @@ DiepScript.define("ui/menu", (require) => {
   width: 0px;
   height: 0px;
   overflow: hidden;
-  background-color: rgba(19,18,18,0.95);
+  background: linear-gradient(135deg, rgba(52,78,180,0.48), rgba(82,232,255,0.18));
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(82,232,255,0.32);
   font-family: "Kanit", sans-serif;
   display: flex;
   flex-direction: column;
@@ -46,7 +48,7 @@ DiepScript.define("ui/menu", (require) => {
   z-index: 1000000;
   border-radius: 5%;
   animation: close 0.95s ease-in-out forwards;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+  box-shadow: 0 22px 46px rgba(67,127,255,0.16);
   user-select: none;
   gap: 8px;
   padding: 12px;
@@ -72,9 +74,9 @@ DiepScript.define("ui/menu", (require) => {
 .menu-row { display:flex; width:100%; gap:8px; justify-content:space-between; }
 .menu { flex:1; display:flex; flex-direction:column; align-items:stretch; }
 .menu button {
-  color:#dbeeff;
-  background: rgba(255,255,255,0.02);
-  border: 1px solid rgba(255,255,255,0.03);
+  color:#eaf5ff;
+  background: rgba(67,127,255,0.08);
+  border: 1px solid rgba(82,232,255,0.18);
   padding:8px 10px;
   margin-bottom:6px;
   font-weight:600;
@@ -87,7 +89,7 @@ DiepScript.define("ui/menu", (require) => {
   text-overflow:ellipsis;
 }
 .menu button:hover { transform: scale(1.02); color:#fff; }
-.menu button.active { background: linear-gradient(180deg, rgba(67,127,255,0.12), rgba(0,178,225,0.06)); color:#fff; border-color: rgba(67,127,255,0.18); }
+.menu button.active { background: linear-gradient(180deg, rgba(82,232,255,0.28), rgba(67,127,255,0.24)); color:#fff; border-color: rgba(82,232,255,0.45); }
 
 /* Sections */
 .section-wrap { width:100%; display:block; padding-top:8px; overflow-y:auto; overflow-x:hidden; flex:1; -webkit-overflow-scrolling: touch; }
@@ -104,11 +106,11 @@ DiepScript.define("ui/menu", (require) => {
 /* Inputs */
 .diepcb { width:16px; height:16px; transform:scale(1.05); margin-left:6px; flex:0 0 auto; }
 .slider { width:160px; max-width:60%; }
-.diepb-select { width:100%; padding:6px; background:rgba(0,0,0,0.16); color:#e6f0fb; border:1px solid rgba(255,255,255,0.04); }
+.diepb-select { width:100%; padding:6px; background:rgba(67,127,255,0.12); color:#eaf5ff; border:1px solid rgba(82,232,255,0.24); }
 
 /* Welcome section */
 .welcome-section { display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding:12px 8px; gap:8px; text-align:center; }
-.welcome-pfp { width:96px; height:96px; border-radius:50%; object-fit:cover; border:2px solid rgba(255,255,255,0.06); box-shadow: 0 4px 10px rgba(0,0,0,0.4); }
+.welcome-pfp { width:96px; height:96px; border-radius:50%; object-fit:cover; border:2px solid rgba(255,255,255,0.12); box-shadow: 0 4px 12px rgba(67,127,255,0.28); }
 .welcome-title { font-size:1.15rem; color:#fff; font-weight:700; margin-top:6px; }
 .welcome-info { font-size:0.92rem; color:#9fbfe6; max-width:92%; line-height:1.3; }
 
@@ -132,7 +134,17 @@ DiepScript.define("ui/menu", (require) => {
 /* Scrollbar styling */
 .section-wrap::-webkit-scrollbar { width:10px; height:10px; }
 .section-wrap::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius:8px; }
-.section-wrap::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius:8px; }
+.section-wrap::-webkit-scrollbar-track { background: rgba(67,127,255,0.12); border-radius:8px; }
+
+/* Notification cleanup */
+body div[id*="notification"],
+body div[class*="notification"],
+body span[id*="notification"],
+body span[class*="notification"] {
+  background: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
 
 /* keep menu controls interactive if page blocks pointer-events */
 .main-div * { pointer-events: auto; }
