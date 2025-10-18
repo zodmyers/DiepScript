@@ -65,39 +65,22 @@ DiepScript.define("features/autofarm", (require) => {
 
   // Priority selector – falls back to other shape types if the preferred one is missing.
   function chooseFarmTarget() {
-    let target = null;
+    const shapeMap = {
+      pentagon: state.neutralPentagons,
+      square: state.neutralSquares,
+      triangle: state.neutralTriangles,
+    };
 
-    if (state.farmPriority === "pentagon" && state.neutralPentagons.length > 0) {
-      target = playersRuntime.nearestShapeWorld(state.neutralPentagons);
-    } else if (
-      state.farmPriority === "square" &&
-      state.neutralSquares.length > 0
-    ) {
-      target = playersRuntime.nearestShapeWorld(state.neutralSquares);
-    } else if (
-      state.farmPriority === "triangle" &&
-      state.neutralTriangles.length > 0
-    ) {
-      target = playersRuntime.nearestShapeWorld(state.neutralTriangles);
-    }
+    const baseOrder = ["pentagon", "square", "triangle"];
+    const ordered = [state.farmPriority, ...baseOrder.filter((type) => type !== state.farmPriority)];
 
-    if (!target) {
-      if (state.farmPriority !== "pentagon" && state.neutralPentagons.length > 0) {
-        target = playersRuntime.nearestShapeWorld(state.neutralPentagons);
-      } else if (
-        state.farmPriority !== "square" &&
-        state.neutralSquares.length > 0
-      ) {
-        target = playersRuntime.nearestShapeWorld(state.neutralSquares);
-      } else if (
-        state.farmPriority !== "triangle" &&
-        state.neutralTriangles.length > 0
-      ) {
-        target = playersRuntime.nearestShapeWorld(state.neutralTriangles);
+    for (const type of ordered) {
+      const list = shapeMap[type];
+      if (list && list.length) {
+        return playersRuntime.nearestShapeWorld(list);
       }
     }
-
-    return target;
+    return null;
   }
 
   // Single tick of autofarm; returns true if we acted on a shape this frame.

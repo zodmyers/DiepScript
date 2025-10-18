@@ -175,7 +175,7 @@ DiepScript.define("core/state", (require) => {
     spinAngle: 0,
     isShooting: false,
     isFiring: false,
-    isAimbotActive: false,
+    isAimbotActive: true,
 
     // Player data
     playerTank: "Tank",
@@ -219,8 +219,8 @@ DiepScript.define("core/state", (require) => {
     showBulletSpeeds: false,
     bulletPositions: [],
     currentComputedBulletSpeed: null,
-    useDroneAimOnlyForMinions: true,
-    autofarmOnRightHold: false,
+    useDroneAimOnlyForMinions: false,
+    autofarmOnRightHold: true,
 
     // Misc runtime
     forcingU: false,
@@ -233,8 +233,6 @@ DiepScript.define("core/state", (require) => {
 
     // Menu + UI
     menuContainer: null,
-    isBlackBg: false,
-    blackBgDiv: null,
 
     // Canvas hook helpers
     ctxTransform: null,
@@ -1383,39 +1381,22 @@ DiepScript.define("features/autofarm", (require) => {
 
   // Priority selector – falls back to other shape types if the preferred one is missing.
   function chooseFarmTarget() {
-    let target = null;
+    const shapeMap = {
+      pentagon: state.neutralPentagons,
+      square: state.neutralSquares,
+      triangle: state.neutralTriangles,
+    };
 
-    if (state.farmPriority === "pentagon" && state.neutralPentagons.length > 0) {
-      target = playersRuntime.nearestShapeWorld(state.neutralPentagons);
-    } else if (
-      state.farmPriority === "square" &&
-      state.neutralSquares.length > 0
-    ) {
-      target = playersRuntime.nearestShapeWorld(state.neutralSquares);
-    } else if (
-      state.farmPriority === "triangle" &&
-      state.neutralTriangles.length > 0
-    ) {
-      target = playersRuntime.nearestShapeWorld(state.neutralTriangles);
-    }
+    const baseOrder = ["pentagon", "square", "triangle"];
+    const ordered = [state.farmPriority, ...baseOrder.filter((type) => type !== state.farmPriority)];
 
-    if (!target) {
-      if (state.farmPriority !== "pentagon" && state.neutralPentagons.length > 0) {
-        target = playersRuntime.nearestShapeWorld(state.neutralPentagons);
-      } else if (
-        state.farmPriority !== "square" &&
-        state.neutralSquares.length > 0
-      ) {
-        target = playersRuntime.nearestShapeWorld(state.neutralSquares);
-      } else if (
-        state.farmPriority !== "triangle" &&
-        state.neutralTriangles.length > 0
-      ) {
-        target = playersRuntime.nearestShapeWorld(state.neutralTriangles);
+    for (const type of ordered) {
+      const list = shapeMap[type];
+      if (list && list.length) {
+        return playersRuntime.nearestShapeWorld(list);
       }
     }
-
-    return target;
+    return null;
   }
 
   // Single tick of autofarm; returns true if we acted on a shape this frame.
@@ -2460,7 +2441,7 @@ DiepScript.define("ui/menu", (require) => {
 
       const info = document.createElement("div");
       info.className = "small";
-      info.innerText = "RMB Toggle — right mouse toggles AutoFarm when enabled.";
+      info.innerText = "Hold RMB to engage the aimbot when this option is enabled.";
       info.addEventListener("mousedown", (e) => e.stopPropagation());
       secAim.appendChild(info);
     }
@@ -2496,7 +2477,7 @@ DiepScript.define("ui/menu", (require) => {
       const rmbInfo = document.createElement("div");
       rmbInfo.className = "small";
       rmbInfo.style.marginTop = "6px";
-      rmbInfo.innerText = "RMB Toggle allows you to farm while holding RMB instead of continuously.";
+      rmbinfo.innerText = "Hold RMB to engage the aimbot when this option is enabled.";
       rmbInfo.addEventListener("mousedown", (e) => e.stopPropagation());
       secFarm.appendChild(rmbInfo);
 
@@ -2561,15 +2542,11 @@ DiepScript.define("ui/menu", (require) => {
 
       const cb3 = document.createElement("input");
       cb3.type = "checkbox";
-      cb3.id = "blackbg-checkbox";
       cb3.className = "diepcb";
-      cb3.checked = Boolean(state.isBlackBg);
       cb3.addEventListener("change", function (e) {
         e.stopPropagation();
-        state.isBlackBg = this.checked;
         try {
           if (window.input && typeof window.input.set_convar === "function") {
-            window.input.set_convar("ren_background_color", state.isBlackBg ? "#000000" : "#CDCDCD");
           }
         } catch (_) {}
         if (window.extern) { try { window.extern.inGameNotification(this.checked ? "Background: ON" : "Background: OFF", 0x2b7bb8); } catch (_) {} }
@@ -2849,7 +2826,6 @@ DiepScript.define("ui/menu", (require) => {
       sync("autofarm-hold-checkbox", state.autofarmOnRightHold);
       sync("show-bullet-speed-checkbox", state.showBulletSpeeds);
       sync("debug-checkbox", state.isDebug);
-      sync("blackbg-checkbox", state.isBlackBg);
     } catch (e) {}
 
     // expose container for others

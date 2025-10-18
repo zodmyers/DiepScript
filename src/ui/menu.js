@@ -338,7 +338,7 @@ DiepScript.define("ui/menu", (require) => {
 
       const info = document.createElement("div");
       info.className = "small";
-      info.innerText = "RMB Toggle — right mouse toggles AutoFarm when enabled.";
+      info.innerText = "Hold RMB to engage the aimbot when this option is enabled.";
       info.addEventListener("mousedown", (e) => e.stopPropagation());
       secAim.appendChild(info);
     }
@@ -374,7 +374,7 @@ DiepScript.define("ui/menu", (require) => {
       const rmbInfo = document.createElement("div");
       rmbInfo.className = "small";
       rmbInfo.style.marginTop = "6px";
-      rmbInfo.innerText = "RMB Toggle allows you to farm while holding RMB instead of continuously.";
+      rmbinfo.innerText = "Hold RMB to engage the aimbot when this option is enabled.";
       rmbInfo.addEventListener("mousedown", (e) => e.stopPropagation());
       secFarm.appendChild(rmbInfo);
 
@@ -439,15 +439,11 @@ DiepScript.define("ui/menu", (require) => {
 
       const cb3 = document.createElement("input");
       cb3.type = "checkbox";
-      cb3.id = "blackbg-checkbox";
       cb3.className = "diepcb";
-      cb3.checked = Boolean(state.isBlackBg);
       cb3.addEventListener("change", function (e) {
         e.stopPropagation();
-        state.isBlackBg = this.checked;
         try {
           if (window.input && typeof window.input.set_convar === "function") {
-            window.input.set_convar("ren_background_color", state.isBlackBg ? "#000000" : "#CDCDCD");
           }
         } catch (_) {}
         if (window.extern) { try { window.extern.inGameNotification(this.checked ? "Background: ON" : "Background: OFF", 0x2b7bb8); } catch (_) {} }
@@ -727,7 +723,6 @@ DiepScript.define("ui/menu", (require) => {
       sync("autofarm-hold-checkbox", state.autofarmOnRightHold);
       sync("show-bullet-speed-checkbox", state.showBulletSpeeds);
       sync("debug-checkbox", state.isDebug);
-      sync("blackbg-checkbox", state.isBlackBg);
     } catch (e) {}
 
     // expose container for others
