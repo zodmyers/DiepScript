@@ -212,6 +212,7 @@ DiepScript.define("core/state", (require) => {
     farmPriority: "pentagon",
     autoAimX: null,
     autoAimY: null,
+    lastFarmTarget: null,
 
     // Debug / overlays
     isDebug: false,
@@ -221,6 +222,7 @@ DiepScript.define("core/state", (require) => {
     currentComputedBulletSpeed: null,
     useDroneAimOnlyForMinions: false,
     autofarmOnRightHold: true,
+    lastAimDebug: null,
 
     // Misc runtime
     forcingU: false,
@@ -259,6 +261,79 @@ DiepScript.define("core/math", () => {
     const vx = velocity[0] || 0;
     const vy = velocity[1] || 0;
     return [player.wx + timeMs * vx, player.wy + timeMs * vy];
+  }
+
+  function getMotionEstimate(positionTable, dtThreshold = 6) {
+    const history = Array.isArray(positionTable)
+      ? positionTable.filter(
+          (entry) =>
+            entry &&
+            Number.isFinite(entry.x) &&
+            Number.isFinite(entry.y) &&
+            Number.isFinite(entry.timestamp)
+        )
+      : [];
+
+    let sumVx = 0;
+    let sumVy = 0;
+    let sumAx = 0;
+    let sumAy = 0;
+    let velocitySamples = 0;
+    let accelSamples = 0;
+    let prevSample = null;
+    let prevVelocity = null;
+
+    for (let i = 0; i < history.length; i += 1) {
+      const sample = history[i];
+      if (!prevSample) {
+        prevSample = sample;
+        continue;
+      }
+
+      const dt = sample.timestamp - prevSample.timestamp;
+      if (dt >= dtThreshold) {
+        const vx = (sample.x - prevSample.x) / dt;
+        const vy = (sample.y - prevSample.y) / dt;
+        sumVx += vx;
+        sumVy += vy;
+        velocitySamples += 1;
+
+        if (prevVelocity) {
+          const dvx = vx - prevVelocity.vx;
+          const dvy = vy - prevVelocity.vy;
+          const dtVel = sample.timestamp - prevVelocity.timestamp;
+          if (dtVel >= dtThreshold) {
+            sumAx += dvx / dtVel;
+            sumAy += dvy / dtVel;
+            accelSamples += 1;
+          }
+        }
+
+        prevVelocity = { vx, vy, timestamp: sample.timestamp };
+      }
+
+      prevSample = sample;
+    }
+
+    const clamp = (value, max) => {
+      if (value > max) return max;
+      if (value < -max) return -max;
+      return value;
+    };
+
+    const avgVx = velocitySamples > 0 ? sumVx / velocitySamples : 0;
+    const avgVy = velocitySamples > 0 ? sumVy / velocitySamples : 0;
+    const avgAx = accelSamples > 0 ? clamp(sumAx / accelSamples, 0.005) : 0;
+    const avgAy = accelSamples > 0 ? clamp(sumAy / accelSamples, 0.005) : 0;
+
+    return {
+      vx: avgVx,
+      vy: avgVy,
+      ax: avgAx,
+      ay: avgAy,
+      velocitySamples,
+      accelSamples,
+    };
   }
 
   function getAverage(points) {
@@ -346,14 +421,15 @@ DiepScript.define("core/math", () => {
 
     const dist = getDistance(shooter.x, shooter.y, target.wx, target.wy);
 
-    const sampleCount = (target.positionTable || []).filter(Boolean).length;
+    const motion = getMotionEstimate(target.positionTable || []);
+    const velocitySampleCount = motion.velocitySamples;
     const rawTvx =
-      target.velocity && sampleCount >= minSamples
-        ? target.velocity[0] || 0
+      velocitySampleCount >= minSamples
+        ? motion.vx || 0
         : 0;
     const rawTvy =
-      target.velocity && sampleCount >= minSamples
-        ? target.velocity[1] || 0
+      velocitySampleCount >= minSamples
+        ? motion.vy || 0
         : 0;
 
     const fbTime = Math.max(
@@ -361,12 +437,25 @@ DiepScript.define("core/math", () => {
       Math.min(400, dist / Math.max(1e-6, bulletSpeed))
     );
     const linearPred = {
-      x: target.wx + rawTvx * fbTime,
-      y: target.wy + rawTvy * fbTime,
+      x:
+        target.wx +
+        rawTvx * fbTime +
+        (motion.accelSamples > 0 ? 0.5 * motion.ax * fbTime * fbTime : 0),
+      y:
+        target.wy +
+        rawTvy * fbTime +
+        (motion.accelSamples > 0 ? 0.5 * motion.ay * fbTime * fbTime : 0),
     };
 
-    const relVx = (rawTvx || 0) - (shooterVel[0] || 0);
-    const relVy = (rawTvy || 0) - (shooterVel[1] || 0);
+    const accelAdjustedVx =
+      rawTvx +
+      (motion.accelSamples > 0 ? motion.ax * fbTime * 0.5 : 0);
+    const accelAdjustedVy =
+      rawTvy +
+      (motion.accelSamples > 0 ? motion.ay * fbTime * 0.5 : 0);
+
+    const relVx = accelAdjustedVx - (shooterVel[0] || 0);
+    const relVy = accelAdjustedVy - (shooterVel[1] || 0);
     const interceptSolution = intercept(
       shooter,
       { x: target.wx, y: target.wy, vx: relVx, vy: relVy },
@@ -378,7 +467,13 @@ DiepScript.define("core/math", () => {
     const sVelSamples =
       velSampleRange <= 0
         ? 1
-        : Math.max(0, Math.min(1, (sampleCount - minSamples) / velSampleRange));
+        : Math.max(
+            0,
+            Math.min(
+              1,
+              (velocitySampleCount - minSamples) / velSampleRange
+            )
+          );
 
     let sSolT = 0;
     let sAngle = 0;
@@ -448,13 +543,25 @@ DiepScript.define("core/math", () => {
       weight,
       debug: {
         dist,
-        sampleCount,
+        sampleCount: velocitySampleCount,
         intercept: interceptSolution,
         sDist,
         sVelSamples,
         sSolT,
         sAngle,
         sRelSpeed,
+        motion: {
+          velocity: {
+            x: rawTvx,
+            y: rawTvy,
+            samples: velocitySampleCount,
+          },
+          acceleration: {
+            x: motion.ax,
+            y: motion.ay,
+            samples: motion.accelSamples,
+          },
+        },
       },
     };
   }
@@ -465,6 +572,7 @@ DiepScript.define("core/math", () => {
     getAverage,
     quad,
     intercept,
+    getMotionEstimate,
     blendPredictiveAim,
   };
 });
@@ -765,32 +873,13 @@ DiepScript.define("runtime/players", (require) => {
         radius: shape.radius,
         name,
         score,
-        velocity: undefined,
+        velocity: [0, 0],
+        acceleration: [0, 0],
+        motionSamples: 0,
+        accelSamples: 0,
         teammate,
       });
     }
-  }
-
-  function getVelocity(positionTable) {
-    let sumX = 0;
-    let sumY = 0;
-    let samples = 0;
-
-    for (let i = 1; i < positionTable.length; i += 1) {
-      const current = positionTable[i];
-      const prev = positionTable[i - 1];
-      if (!current || !prev) continue;
-
-      const dx = current.x - prev.x;
-      const dy = current.y - prev.y;
-      const dt = current.timestamp - prev.timestamp;
-      if (dt < 6) continue;
-      sumX += dx / dt;
-      sumY += dy / dt;
-      samples += 1;
-    }
-
-    return samples > 0 ? [sumX / samples, sumY / samples] : [0, 0];
   }
 
   // Attempt to match the freshly parsed players to the previous frame to preserve velocity history.
@@ -830,9 +919,17 @@ DiepScript.define("runtime/players", (require) => {
 
         current.teammate = last.teammate || current.teammate;
         current.positionTable = history;
-        current.velocity = getVelocity(history);
+        const motion = math.getMotionEstimate(history);
+        current.velocity = [motion.vx || 0, motion.vy || 0];
+        current.acceleration = [motion.ax || 0, motion.ay || 0];
+        current.motionSamples = motion.velocitySamples || 0;
+        current.accelSamples = motion.accelSamples || 0;
       } else {
         current.positionTable = Array.from({ length: maxHistory }, () => null);
+        current.velocity = [0, 0];
+        current.acceleration = [0, 0];
+        current.motionSamples = 0;
+        current.accelSamples = 0;
       }
 
       if (!isTeamMode()) {
@@ -998,8 +1095,8 @@ DiepScript.define("features/visuals", (require) => {
     ctx.beginPath();
     ctx.moveTo(predictCanvasX, predictCanvasY);
     ctx.lineTo(targetCanvasX, targetCanvasY);
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(67, 127, 255, 0.65)";
+    ctx.lineWidth = 2;
     ctx.stroke();
   }
 
@@ -1020,18 +1117,177 @@ DiepScript.define("features/visuals", (require) => {
         bp.speed === null || typeof bp.speed !== "number"
           ? "n/a"
           : bp.speed.toFixed(3);
-      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillStyle = "rgba(46, 112, 255, 0.35)";
       const metrics = ctx.measureText(text);
       ctx.fillRect(bp.x + 4, bp.y - 20, metrics.width + 6, 18);
-      ctx.fillStyle = "#FFD700";
+      ctx.fillStyle = "#eaf5ff";
       ctx.fillText(text, bp.x + 7, bp.y - 6);
     });
+    ctx.restore();
+  }
+
+  function renderCoordinateOverlay() {
+    if (!state.isDebug) return;
+
+    const canvas = document.getElementById("canvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+
+    ctx.save();
+    ctx.globalAlpha = 0.95;
+    ctx.font = "12px 'Kanit', sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+
+    const lineHeight = 13;
+    const drawLines = (x, startY, lines, fill, stroke) => {
+      const rows = Array.isArray(lines) ? lines : [lines];
+      for (let i = 0; i < rows.length; i += 1) {
+        const line = rows[i];
+        const y = startY + i * lineHeight;
+        if (typeof ctx.strokeText === "function") {
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = stroke;
+          ctx.strokeText(line, x, y);
+        }
+        ctx.fillStyle = fill;
+        ctx.fillText(line, x, y);
+      }
+    };
+
+    // Local player (tank is always centered on the main canvas)
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    drawLines(
+      centerX,
+      centerY + 36,
+      [`you x:${Math.round(state.playerX)}`, `y:${Math.round(state.playerY)}`],
+      "#e6f3ff",
+      "rgba(67, 127, 255, 0.55)"
+    );
+
+    // Enemy player markers
+    for (let i = 0; i < state.players.length; i += 1) {
+      const player = state.players[i];
+      if (!player || player.teammate) continue;
+      const labelY = player.y + (player.radius || 24) + 6;
+      drawLines(
+        player.x,
+        labelY,
+        [`x:${Math.round(player.wx)}`, `y:${Math.round(player.wy)}`],
+        "#ffe5f5",
+        "rgba(245, 82, 148, 0.6)"
+      );
+    }
+
+    // Neutral shape coordinates (limited to avoid clutter)
+    const shapeConfigs = [
+      { list: state.neutralPentagons, tag: "P", fill: "#ffe66d" },
+      { list: state.neutralTriangles, tag: "T", fill: "#ffb27f" },
+      { list: state.neutralSquares, tag: "S", fill: "#b5ff9c" },
+    ];
+    for (let s = 0; s < shapeConfigs.length; s += 1) {
+      const cfg = shapeConfigs[s];
+      const list = Array.isArray(cfg.list) ? cfg.list : [];
+      const limit = Math.min(list.length, 6);
+      for (let i = 0; i < limit; i += 1) {
+        const point = list[i];
+        if (!point) continue;
+        const [cx, cy] = point;
+        const [wx, wy] = coordinates.getRenderedWorldPosition(cx, cy);
+        drawLines(
+          cx,
+          cy + 16,
+          [`${cfg.tag} x:${Math.round(wx)}`, `y:${Math.round(wy)}`],
+          cfg.fill,
+          "rgba(67, 127, 255, 0.45)"
+        );
+      }
+    }
+
+    if (state.lastFarmTarget && Number.isFinite(state.lastFarmTarget.wx)) {
+      const canvasPoint = coordinates.worldToCanvasPosition(
+        state.lastFarmTarget.wx,
+        state.lastFarmTarget.wy
+      );
+      const [fx, fy] = canvasPoint;
+      if (fx != null && fy != null) {
+        drawLines(
+          fx,
+          fy + 18,
+          [
+            `farm: ${state.lastFarmTarget.type || "unknown"}`,
+            `@${Math.round(state.lastFarmTarget.wx)},${Math.round(
+              state.lastFarmTarget.wy
+            )}`,
+          ],
+          "#d6ffe3",
+          "rgba(46, 112, 255, 0.35)"
+        );
+      }
+    }
+
+    // Aim blend telemetry snapshot
+    const aimDebug = state.lastAimDebug;
+    if (
+      aimDebug &&
+      Number.isFinite(aimDebug.timestamp) &&
+      now - aimDebug.timestamp < 1600
+    ) {
+      const interceptTime =
+        aimDebug.intercept && Number.isFinite(aimDebug.intercept.t)
+          ? `${Math.round(aimDebug.intercept.t)}ms`
+          : "n/a";
+      const motion = aimDebug.motion || {};
+      const motionVel = motion.velocity || {};
+      const targetWorld = aimDebug.targetWorld || {};
+      const aimWorld = aimDebug.aimWorld || {};
+      const shooterVel = aimDebug.shooterVelocity || {};
+      const lines = [
+        `target: ${aimDebug.targetName || "unknown"}`,
+        `dist: ${Math.round(aimDebug.dist || 0)}`,
+        `weight: ${(aimDebug.weight ?? 0).toFixed(2)}`,
+        `intercept: ${interceptTime}`,
+        `t @${Math.round(targetWorld.x || 0)},${Math.round(
+          targetWorld.y || 0
+        )}`,
+        `aim @${Math.round(aimWorld.x || 0)},${Math.round(
+          aimWorld.y || 0
+        )}`,
+      ];
+      if (
+        Number.isFinite(motionVel.x) &&
+        Number.isFinite(motionVel.y)
+      ) {
+        lines.push(
+          `vx:${motionVel.x.toFixed(3)} vy:${motionVel.y.toFixed(3)}`
+        );
+      }
+      if (
+        Number.isFinite(shooterVel.x) &&
+        Number.isFinite(shooterVel.y)
+      ) {
+        lines.push(
+          `self vx:${shooterVel.x.toFixed(3)} vy:${shooterVel.y.toFixed(3)}`
+        );
+      }
+      drawLines(
+        canvas.width - 140,
+        canvas.height - lines.length * lineHeight - 24,
+        lines,
+        "#e6f3ff",
+        "rgba(67, 127, 255, 0.55)"
+      );
+    }
+
     ctx.restore();
   }
 
   return {
     renderAimOverlay,
     renderBulletSpeedOverlay,
+    renderCoordinateOverlay,
   };
 });
 // ---- End src/features/visuals.js
@@ -1225,6 +1481,7 @@ DiepScript.define("features/aimbot", (require) => {
       (!state.isAimbotActive && !force) ||
       !isAimbotTriggerActive()
     ) {
+      state.lastAimDebug = null;
       unlockMouse();
       return;
     }
@@ -1248,6 +1505,7 @@ DiepScript.define("features/aimbot", (require) => {
         dist: math.getDistance(state.playerX, state.playerY, aimWorldX, aimWorldY),
         vx,
         vy,
+        weight: 0,
       };
     } else {
       const shooter = { x: state.playerX, y: state.playerY };
@@ -1272,7 +1530,7 @@ DiepScript.define("features/aimbot", (require) => {
       aimWorldX = blend.x;
       aimWorldY = blend.y;
       state.prevAimWorld = { x: aimWorldX, y: aimWorldY };
-      debugInfo = blend.debug;
+      debugInfo = { ...blend.debug, weight: blend.weight };
     }
 
     if (
@@ -1281,6 +1539,26 @@ DiepScript.define("features/aimbot", (require) => {
       (debugInfo.dist < 1500 || Math.random() < 0.002)
     ) {
       console.log("[DiepScript][AIM BLEND]", debugInfo);
+    }
+
+    if (debugInfo) {
+      const velocity = Array.isArray(target.velocity) ? target.velocity : [0, 0];
+      const shooterVel = Array.isArray(state.shooterVelocity)
+        ? state.shooterVelocity
+        : [0, 0];
+      state.lastAimDebug = {
+        ...debugInfo,
+        timestamp: performance.now(),
+        targetName: target.name || "",
+        targetScore: target.score || 0,
+        targetWorld: { x: target.wx, y: target.wy },
+        targetVelocity: { x: velocity[0] || 0, y: velocity[1] || 0 },
+        shooterWorld: { x: state.playerX, y: state.playerY },
+        shooterVelocity: { x: shooterVel[0] || 0, y: shooterVel[1] || 0 },
+        aimWorld: { x: aimWorldX, y: aimWorldY },
+      };
+    } else {
+      state.lastAimDebug = null;
     }
 
     const [screenX, screenY] = coordinates.worldToMousePosition(
@@ -1319,11 +1597,13 @@ DiepScript.define("features/autofarm", (require) => {
   const state = require("core/state");
   const constants = require("core/constants");
   const coordinates = require("core/coordinates");
+  const math = require("core/math");
   const playersRuntime = require("runtime/players");
 
   function resetAutoAim() {
     state.autoAimX = null;
     state.autoAimY = null;
+    state.lastFarmTarget = null;
   }
 
   function sendAutofarmAim(x, y) {
@@ -1387,16 +1667,42 @@ DiepScript.define("features/autofarm", (require) => {
       triangle: state.neutralTriangles,
     };
 
-    const baseOrder = ["pentagon", "square", "triangle"];
-    const ordered = [state.farmPriority, ...baseOrder.filter((type) => type !== state.farmPriority)];
+    const rank = {
+      pentagon: 3,
+      triangle: 2,
+      square: 1,
+    };
+    const orderedTypes = ["pentagon", "triangle", "square"];
+    const userPriority = orderedTypes.includes(state.farmPriority)
+      ? state.farmPriority
+      : null;
 
-    for (const type of ordered) {
+    let best = null;
+    orderedTypes.forEach((type) => {
       const list = shapeMap[type];
-      if (list && list.length) {
-        return playersRuntime.nearestShapeWorld(list);
+      if (!list || list.length === 0) return;
+      const nearestWorld = playersRuntime.nearestShapeWorld(list);
+      if (!nearestWorld) return;
+      const distance = math.getDistance(
+        state.playerX,
+        state.playerY,
+        nearestWorld[0],
+        nearestWorld[1]
+      );
+      const baseScore = (rank[type] || 0) * 10_000;
+      const userBonus = userPriority === type ? 100_000 : 0;
+      const score = userBonus + baseScore - distance;
+      if (!best || score > best.score) {
+        best = {
+          type,
+          world: nearestWorld,
+          distance,
+          score,
+        };
       }
-    }
-    return null;
+    });
+
+    return best;
   }
 
   // Single tick of autofarm; returns true if we acted on a shape this frame.
@@ -1407,12 +1713,22 @@ DiepScript.define("features/autofarm", (require) => {
 
     drawDebugTargets();
 
-    const targetWorld = chooseFarmTarget();
-    if (!targetWorld) return false;
+    const choice = chooseFarmTarget();
+    if (!choice || !choice.world) {
+      state.lastFarmTarget = null;
+      return false;
+    }
+
+    state.lastFarmTarget = {
+      type: choice.type,
+      wx: choice.world[0],
+      wy: choice.world[1],
+      distance: choice.distance,
+    };
 
     const [desiredX, desiredY] = coordinates.worldToMousePosition(
-      targetWorld[0],
-      targetWorld[1]
+      choice.world[0],
+      choice.world[1]
     );
 
     if (desiredX == null || desiredY == null) return false;
@@ -2140,7 +2456,9 @@ DiepScript.define("ui/menu", (require) => {
   width: 0px;
   height: 0px;
   overflow: hidden;
-  background-color: rgba(19,18,18,0.95);
+  background: linear-gradient(135deg, rgba(52,78,180,0.48), rgba(82,232,255,0.18));
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(82,232,255,0.32);
   font-family: "Kanit", sans-serif;
   display: flex;
   flex-direction: column;
@@ -2149,7 +2467,7 @@ DiepScript.define("ui/menu", (require) => {
   z-index: 1000000;
   border-radius: 5%;
   animation: close 0.95s ease-in-out forwards;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+  box-shadow: 0 22px 46px rgba(67,127,255,0.16);
   user-select: none;
   gap: 8px;
   padding: 12px;
@@ -2175,9 +2493,9 @@ DiepScript.define("ui/menu", (require) => {
 .menu-row { display:flex; width:100%; gap:8px; justify-content:space-between; }
 .menu { flex:1; display:flex; flex-direction:column; align-items:stretch; }
 .menu button {
-  color:#dbeeff;
-  background: rgba(255,255,255,0.02);
-  border: 1px solid rgba(255,255,255,0.03);
+  color:#eaf5ff;
+  background: rgba(67,127,255,0.08);
+  border: 1px solid rgba(82,232,255,0.18);
   padding:8px 10px;
   margin-bottom:6px;
   font-weight:600;
@@ -2190,7 +2508,7 @@ DiepScript.define("ui/menu", (require) => {
   text-overflow:ellipsis;
 }
 .menu button:hover { transform: scale(1.02); color:#fff; }
-.menu button.active { background: linear-gradient(180deg, rgba(67,127,255,0.12), rgba(0,178,225,0.06)); color:#fff; border-color: rgba(67,127,255,0.18); }
+.menu button.active { background: linear-gradient(180deg, rgba(82,232,255,0.28), rgba(67,127,255,0.24)); color:#fff; border-color: rgba(82,232,255,0.45); }
 
 /* Sections */
 .section-wrap { width:100%; display:block; padding-top:8px; overflow-y:auto; overflow-x:hidden; flex:1; -webkit-overflow-scrolling: touch; }
@@ -2207,11 +2525,11 @@ DiepScript.define("ui/menu", (require) => {
 /* Inputs */
 .diepcb { width:16px; height:16px; transform:scale(1.05); margin-left:6px; flex:0 0 auto; }
 .slider { width:160px; max-width:60%; }
-.diepb-select { width:100%; padding:6px; background:rgba(0,0,0,0.16); color:#e6f0fb; border:1px solid rgba(255,255,255,0.04); }
+.diepb-select { width:100%; padding:6px; background:rgba(67,127,255,0.12); color:#eaf5ff; border:1px solid rgba(82,232,255,0.24); }
 
 /* Welcome section */
 .welcome-section { display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding:12px 8px; gap:8px; text-align:center; }
-.welcome-pfp { width:96px; height:96px; border-radius:50%; object-fit:cover; border:2px solid rgba(255,255,255,0.06); box-shadow: 0 4px 10px rgba(0,0,0,0.4); }
+.welcome-pfp { width:96px; height:96px; border-radius:50%; object-fit:cover; border:2px solid rgba(255,255,255,0.12); box-shadow: 0 4px 12px rgba(67,127,255,0.28); }
 .welcome-title { font-size:1.15rem; color:#fff; font-weight:700; margin-top:6px; }
 .welcome-info { font-size:0.92rem; color:#9fbfe6; max-width:92%; line-height:1.3; }
 
@@ -2235,7 +2553,18 @@ DiepScript.define("ui/menu", (require) => {
 /* Scrollbar styling */
 .section-wrap::-webkit-scrollbar { width:10px; height:10px; }
 .section-wrap::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius:8px; }
-.section-wrap::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius:8px; }
+.section-wrap::-webkit-scrollbar-track { background: rgba(67,127,255,0.12); border-radius:8px; }
+
+/* Notification cleanup */
+body div[id*="notification"],
+body div[class*="notification"],
+body span[id*="notification"],
+body span[class*="notification"] {
+  background: none !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+}
 
 /* keep menu controls interactive if page blocks pointer-events */
 .main-div * { pointer-events: auto; }
@@ -2540,18 +2869,6 @@ DiepScript.define("ui/menu", (require) => {
       });
       appendRow(secVis, "Bullet Speed Overlay", cb2);
 
-      const cb3 = document.createElement("input");
-      cb3.type = "checkbox";
-      cb3.className = "diepcb";
-      cb3.addEventListener("change", function (e) {
-        e.stopPropagation();
-        try {
-          if (window.input && typeof window.input.set_convar === "function") {
-          }
-        } catch (_) {}
-        if (window.extern) { try { window.extern.inGameNotification(this.checked ? "Background: ON" : "Background: OFF", 0x2b7bb8); } catch (_) {} }
-      });
-      appendRow(secVis, "Black Background", cb3);
     }
 
     // --- Builds section ---
@@ -2939,6 +3256,7 @@ DiepScript.define("runtime/gameLoop", (require) => {
     playersRuntime.updatePlayersFromRender();
     playersRuntime.matchPlayers();
     drawPlayerDebugLines();
+    visuals.renderCoordinateOverlay();
     stats.forceU();
 
     if (aimbot.isAimbotTriggerActive() && state.autofarmOnRightHold) {

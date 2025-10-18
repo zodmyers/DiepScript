@@ -145,6 +145,28 @@ DiepScript.define("features/visuals", (require) => {
       }
     }
 
+    if (state.lastFarmTarget && Number.isFinite(state.lastFarmTarget.wx)) {
+      const canvasPoint = coordinates.worldToCanvasPosition(
+        state.lastFarmTarget.wx,
+        state.lastFarmTarget.wy
+      );
+      const [fx, fy] = canvasPoint;
+      if (fx != null && fy != null) {
+        drawLines(
+          fx,
+          fy + 18,
+          [
+            `farm: ${state.lastFarmTarget.type || "unknown"}`,
+            `@${Math.round(state.lastFarmTarget.wx)},${Math.round(
+              state.lastFarmTarget.wy
+            )}`,
+          ],
+          "#d6ffe3",
+          "rgba(46, 112, 255, 0.35)"
+        );
+      }
+    }
+
     // Aim blend telemetry snapshot
     const aimDebug = state.lastAimDebug;
     if (
@@ -158,11 +180,20 @@ DiepScript.define("features/visuals", (require) => {
           : "n/a";
       const motion = aimDebug.motion || {};
       const motionVel = motion.velocity || {};
+      const targetWorld = aimDebug.targetWorld || {};
+      const aimWorld = aimDebug.aimWorld || {};
+      const shooterVel = aimDebug.shooterVelocity || {};
       const lines = [
         `target: ${aimDebug.targetName || "unknown"}`,
         `dist: ${Math.round(aimDebug.dist || 0)}`,
         `weight: ${(aimDebug.weight ?? 0).toFixed(2)}`,
         `intercept: ${interceptTime}`,
+        `t @${Math.round(targetWorld.x || 0)},${Math.round(
+          targetWorld.y || 0
+        )}`,
+        `aim @${Math.round(aimWorld.x || 0)},${Math.round(
+          aimWorld.y || 0
+        )}`,
       ];
       if (
         Number.isFinite(motionVel.x) &&
@@ -170,6 +201,14 @@ DiepScript.define("features/visuals", (require) => {
       ) {
         lines.push(
           `vx:${motionVel.x.toFixed(3)} vy:${motionVel.y.toFixed(3)}`
+        );
+      }
+      if (
+        Number.isFinite(shooterVel.x) &&
+        Number.isFinite(shooterVel.y)
+      ) {
+        lines.push(
+          `self vx:${shooterVel.x.toFixed(3)} vy:${shooterVel.y.toFixed(3)}`
         );
       }
       drawLines(

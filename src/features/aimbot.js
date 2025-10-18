@@ -247,11 +247,20 @@ DiepScript.define("features/aimbot", (require) => {
     }
 
     if (debugInfo) {
+      const velocity = Array.isArray(target.velocity) ? target.velocity : [0, 0];
+      const shooterVel = Array.isArray(state.shooterVelocity)
+        ? state.shooterVelocity
+        : [0, 0];
       state.lastAimDebug = {
         ...debugInfo,
         timestamp: performance.now(),
         targetName: target.name || "",
         targetScore: target.score || 0,
+        targetWorld: { x: target.wx, y: target.wy },
+        targetVelocity: { x: velocity[0] || 0, y: velocity[1] || 0 },
+        shooterWorld: { x: state.playerX, y: state.playerY },
+        shooterVelocity: { x: shooterVel[0] || 0, y: shooterVel[1] || 0 },
+        aimWorld: { x: aimWorldX, y: aimWorldY },
       };
     } else {
       state.lastAimDebug = null;

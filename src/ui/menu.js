@@ -142,6 +142,7 @@ body div[class*="notification"],
 body span[id*="notification"],
 body span[class*="notification"] {
   background: none !important;
+  background-color: transparent !important;
   box-shadow: none !important;
   border: none !important;
 }
@@ -449,18 +450,6 @@ body span[class*="notification"] {
       });
       appendRow(secVis, "Bullet Speed Overlay", cb2);
 
-      const cb3 = document.createElement("input");
-      cb3.type = "checkbox";
-      cb3.className = "diepcb";
-      cb3.addEventListener("change", function (e) {
-        e.stopPropagation();
-        try {
-          if (window.input && typeof window.input.set_convar === "function") {
-          }
-        } catch (_) {}
-        if (window.extern) { try { window.extern.inGameNotification(this.checked ? "Background: ON" : "Background: OFF", 0x2b7bb8); } catch (_) {} }
-      });
-      appendRow(secVis, "Black Background", cb3);
     }
 
     // --- Builds section ---

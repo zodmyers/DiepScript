@@ -52,6 +52,7 @@ DiepScript.define("core/state", (require) => {
     farmPriority: "pentagon",
     autoAimX: null,
     autoAimY: null,
+    lastFarmTarget: null,
 
     // Debug / overlays
     isDebug: false,

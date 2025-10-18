@@ -3,11 +3,13 @@ DiepScript.define("features/autofarm", (require) => {
   const state = require("core/state");
   const constants = require("core/constants");
   const coordinates = require("core/coordinates");
+  const math = require("core/math");
   const playersRuntime = require("runtime/players");
 
   function resetAutoAim() {
     state.autoAimX = null;
     state.autoAimY = null;
+    state.lastFarmTarget = null;
   }
 
   function sendAutofarmAim(x, y) {
@@ -71,16 +73,42 @@ DiepScript.define("features/autofarm", (require) => {
       triangle: state.neutralTriangles,
     };
 
-    const baseOrder = ["pentagon", "triangle", "square"];
-    const ordered = [state.farmPriority, ...baseOrder.filter((type) => type !== state.farmPriority)];
+    const rank = {
+      pentagon: 3,
+      triangle: 2,
+      square: 1,
+    };
+    const orderedTypes = ["pentagon", "triangle", "square"];
+    const userPriority = orderedTypes.includes(state.farmPriority)
+      ? state.farmPriority
+      : null;
 
-    for (const type of ordered) {
+    let best = null;
+    orderedTypes.forEach((type) => {
       const list = shapeMap[type];
-      if (list && list.length) {
-        return playersRuntime.nearestShapeWorld(list);
+      if (!list || list.length === 0) return;
+      const nearestWorld = playersRuntime.nearestShapeWorld(list);
+      if (!nearestWorld) return;
+      const distance = math.getDistance(
+        state.playerX,
+        state.playerY,
+        nearestWorld[0],
+        nearestWorld[1]
+      );
+      const baseScore = (rank[type] || 0) * 10_000;
+      const userBonus = userPriority === type ? 100_000 : 0;
+      const score = userBonus + baseScore - distance;
+      if (!best || score > best.score) {
+        best = {
+          type,
+          world: nearestWorld,
+          distance,
+          score,
+        };
       }
-    }
-    return null;
+    });
+
+    return best;
   }
 
   // Single tick of autofarm; returns true if we acted on a shape this frame.
@@ -91,12 +119,22 @@ DiepScript.define("features/autofarm", (require) => {
 
     drawDebugTargets();
 
-    const targetWorld = chooseFarmTarget();
-    if (!targetWorld) return false;
+    const choice = chooseFarmTarget();
+    if (!choice || !choice.world) {
+      state.lastFarmTarget = null;
+      return false;
+    }
+
+    state.lastFarmTarget = {
+      type: choice.type,
+      wx: choice.world[0],
+      wy: choice.world[1],
+      distance: choice.distance,
+    };
 
     const [desiredX, desiredY] = coordinates.worldToMousePosition(
-      targetWorld[0],
-      targetWorld[1]
+      choice.world[0],
+      choice.world[1]
     );
 
     if (desiredX == null || desiredY == null) return false;
